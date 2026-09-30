@@ -1,5 +1,5 @@
 # Runtime dependencies (pinned; verified together with `pip check`).
-# Later phases add: LangChain/Mem0/Chroma (3), parsers (4), LangGraph (6).
+# Later phases add: parsers (4), LangGraph (6).
 fastapi==0.142.2
 uvicorn[standard]==0.54.0
 pydantic==2.13.5
@@ -16,3 +16,12 @@ psycopg[binary]==3.3.6
 PyJWT[crypto]==2.15.1
 # 49.x, not 50.0.2: Windows Smart App Control blocks the 50.0.2 native DLL (see DECISIONS.md)
 cryptography==49.0.0
+
+# LLMs, memory, vectors (Phase 3). No PyTorch: embeddings come from Ollama.
+langchain-core==1.6.6
+langchain-google-genai==4.4.0
+langchain-ollama==1.1.0
+mem0ai==2.2.1
+chromadb==1.5.9
+# zoneinfo needs tz data on Windows and slim images.
+tzdata==2026.4

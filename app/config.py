@@ -39,14 +39,34 @@ class Settings(BaseSettings):
     POSTGRES_HOST_PORT: int = 5432
 
     # --- LLM / embeddings (swappable by config only) ---
-    LLM_PROVIDER: Literal["gemini", "ollama", "openai", "fake"] = "gemini"
+    # `fake` = deterministic offline models for tests/CI (refused in production).
+    LLM_PROVIDER: Literal["gemini", "ollama", "fake"] = "gemini"
+    # Blank -> provider default (see app/services/llm.py DEFAULT_MODELS).
     LLM_MODEL: str | None = None
-    EMBEDDING_PROVIDER: Literal["ollama", "gemini", "openai", "fake"] = "ollama"
+    LLM_TEMPERATURE: float = Field(default=0.3, ge=0, le=2)
+    LLM_TIMEOUT_SECONDS: float = Field(default=60, gt=0)
+    # Attempts on HTTP 429 (exponential backoff, honours the server's retry delay).
+    LLM_RATE_LIMIT_ATTEMPTS: int = Field(default=4, ge=1, le=10)
+    EMBEDDING_PROVIDER: Literal["ollama", "gemini", "fake"] = "ollama"
     EMBEDDING_MODEL: str = "nomic-embed-text"
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    # Context window for Ollama chat models (memories + history need more than the default).
+    OLLAMA_NUM_CTX: int = Field(default=8192, ge=2048)
     GEMINI_API_KEY: SecretStr | None = None
-    OPENAI_API_KEY: SecretStr | None = None
-    OPENAI_BASE_URL: str | None = None
+
+    # Model Mem0 uses to extract memories (runs in the background after each reply).
+    # Blank -> same provider/model as the chat LLM. Its prompt is ~8.5k tokens, so it
+    # gets its own (larger) Ollama context window and a longer timeout.
+    MEMORY_LLM_PROVIDER: Literal["gemini", "ollama", "fake"] | None = None
+    MEMORY_LLM_MODEL: str | None = None
+    MEMORY_OLLAMA_NUM_CTX: int = Field(default=16384, ge=12288)
+    MEMORY_LLM_TIMEOUT_SECONDS: float = Field(default=180, gt=0)
+
+    # --- Chat / memory ---
+    # Previous messages of the session sent to the LLM each turn.
+    CHAT_HISTORY_LIMIT: int = Field(default=20, ge=0, le=200)
+    MEMORY_RECALL_K: int = Field(default=5, ge=1, le=50)
+    MAX_MESSAGE_CHARS: int = Field(default=8000, ge=100)
 
     # --- Auth ---
     AUTH_PROVIDER: Literal["firebase", "fake"] = "firebase"
@@ -68,8 +88,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _forbid_fake_auth_in_production(self) -> "Settings":
-        if self.APP_ENV == "production" and self.AUTH_PROVIDER == "fake":
-            raise ValueError("AUTH_PROVIDER=fake is not allowed when APP_ENV=production")
+        if self.APP_ENV == "production":
+            for name in (
+                "AUTH_PROVIDER",
+                "LLM_PROVIDER",
+                "MEMORY_LLM_PROVIDER",
+                "EMBEDDING_PROVIDER",
+            ):
+                if getattr(self, name) == "fake":
+                    raise ValueError(f"{name}=fake is not allowed when APP_ENV=production")
         return self
 
     @model_validator(mode="after")

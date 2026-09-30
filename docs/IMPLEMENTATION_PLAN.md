@@ -62,8 +62,8 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 | Phase | Deliverable | Depends on | You provide beforehand | Status |
 |---|---|---|---|---|
 | 1 | App scaffold, Docker Compose, config, `/health` | – | Docker Desktop running | ✅ Verified 30 Sep 2026 |
-| 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | 🟨 Built, awaiting your verification |
-| 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | ⬜ |
+| 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | ✅ Verified 1 Oct 2026 |
+| 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | 🟨 Built, awaiting your verification |
 | 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | ⬜ |
 | 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ⬜ |
 | 6 | LangGraph agent with tools | 3, 4, 5 | – | ⬜ |
@@ -206,7 +206,7 @@ curl.exe -i http://localhost:8000/health
 - Write path: map Mem0 add events (ADD, UPDATE, DELETE, NONE), checked against the current docs, onto `memory_meta` upserts.
 - Read path: fetch `k*3`, drop archived and superseded, rank by `relevance × strength`, take the top k, then **reinforce** (+0.1, capped at 1.0, `access_count++`). A reinforced stale memory goes back to active. Missing meta rows are backfilled as active.
 - A pure decay function `decay(now, ...)`: `S = 14 × (1 + 0.5 × access_count)` and `strength = exp(−days / S)`, where below 0.5 is stale and below 0.15 is archived.
-- Supersession through Mem0 UPDATE events, plus an optional LLM contradiction check.
+- Supersession through **our own LLM contradiction check**. Mem0 2.2.1 is ADD-only and never emits UPDATE events (see DECISIONS.md, Phase 3).
 - `jobs/memory_lifecycle.py` behind `POST /internal/jobs/memory-lifecycle` (`CRON_SECRET`, constant-time compare). It's idempotent and also cleans up orphaned meta rows.
 - `routers/memory.py`: `GET /memory`, `DELETE /memory/{id}`, `GET /memory/health`, and `DELETE /me/data` (with an explicit confirmation field).
 

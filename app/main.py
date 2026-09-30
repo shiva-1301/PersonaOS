@@ -13,7 +13,9 @@ from app.db.session import make_engine, make_session_factory
 from app.errors import register_error_handlers
 from app.logging_config import setup_logging
 from app.middleware import RequestIdMiddleware
-from app.routers import health, users
+from app.routers import chat, health, users
+from app.services.container import Services
+from app.services.llm import chat_model_name, memory_model_settings
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +37,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = make_engine(settings.DATABASE_URL)
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.verifier = build_verifier(settings)
+    # Models, Chroma and Mem0 are built lazily on first use (see services/container.py).
+    app.state.services = Services(settings)
 
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
 
     app.include_router(health.router)
     app.include_router(users.router)
+    app.include_router(chat.router)
 
+    mem = memory_model_settings(settings)
     logger.info(
         "PersonaOS API starting",
         extra={
             "app_env": settings.APP_ENV,
             "llm_provider": settings.LLM_PROVIDER,
+            "llm_model": chat_model_name(settings),
+            "memory_llm": f"{mem.LLM_PROVIDER}:{chat_model_name(mem)}",
             "embedding_provider": settings.EMBEDDING_PROVIDER,
+            "embedding_model": settings.EMBEDDING_MODEL,
             "auth_provider": settings.AUTH_PROVIDER,
             "google_enabled": settings.google_enabled,
         },

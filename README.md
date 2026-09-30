@@ -4,11 +4,11 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 2 (database + auth)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 3 (chat with long-term memory)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
-Prerequisites: Python 3.12 and Docker Desktop (WSL 2).
+Prerequisites: Python 3.12, Docker Desktop (WSL 2), and [Ollama](https://ollama.com) running on the host with `ollama pull nomic-embed-text` and `ollama pull qwen2.5:7b`.
 
 ```powershell
 # 1. Python environment (for tests and linting)
@@ -35,12 +35,23 @@ curl.exe http://localhost:8000/health    # -> {"status":"ok"}
 Database migrations run automatically when the `api` container starts. From the host: `alembic upgrade head` (or `alembic downgrade base`).
 Tests need Postgres running (`docker compose up -d postgres`). They use a separate `personaos_test` database, which they create themselves.
 
+### Live tests and model checks
+
+```powershell
+.\scripts\test.ps1 -m live -s                          # real Gemini + Ollama, fake data only
+.venv\Scripts\python.exe scripts\smoke_tool_calling.py  # compare tool calling across models
+```
+
 ### Calling the API as a real user
 
 ```powershell
 # Firebase test user -> ID token (password prompt is hidden). Needs FIREBASE_WEB_API_KEY in .env.
 $t = .venv\Scripts\python.exe scripts\get_id_token.py --email test-a@example.com
 curl.exe -H "Authorization: Bearer $t" http://localhost:8000/me
+
+# Chat (first call starts a session; pass session_id to continue it)
+$body = @{ message = "I study best after 6 pm." } | ConvertTo-Json
+Invoke-RestMethod -Method Post http://localhost:8000/chat -Headers @{Authorization="Bearer $t"} -ContentType "application/json" -Body $body
 ```
 
 If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.

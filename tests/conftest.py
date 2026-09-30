@@ -26,11 +26,25 @@ from app.main import create_app
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# Never phone home from tests (read by Mem0 / Chroma at import time).
+os.environ.setdefault("MEM0_TELEMETRY", "False")
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+
+# Offline providers: CI and tests never call a real LLM or embedding service.
+OFFLINE = {"LLM_PROVIDER": "fake", "EMBEDDING_PROVIDER": "fake", "LLM_RATE_LIMIT_ATTEMPTS": 1}
+
 
 @pytest.fixture
-def settings() -> Settings:
+def settings(tmp_path) -> Settings:
     # _env_file=None: the app under test never reads the developer's local .env.
-    return Settings(_env_file=None, APP_ENV="test", AUTH_PROVIDER="fake", LOG_FORMAT="text")
+    return Settings(
+        _env_file=None,
+        APP_ENV="test",
+        AUTH_PROVIDER="fake",
+        LOG_FORMAT="text",
+        CHROMA_PATH=str(tmp_path / "chroma"),
+        **OFFLINE,
+    )
 
 
 @pytest.fixture
@@ -98,13 +112,15 @@ def db_url() -> str:
 
 
 @pytest.fixture
-def db_settings(db_url: str) -> Settings:
+def db_settings(db_url: str, tmp_path) -> Settings:
     return Settings(
         _env_file=None,
         APP_ENV="test",
         AUTH_PROVIDER="fake",
         LOG_FORMAT="text",
         DATABASE_URL=db_url,
+        CHROMA_PATH=str(tmp_path / "chroma"),
+        **OFFLINE,
     )
 
 

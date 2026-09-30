@@ -20,6 +20,8 @@ _STATUS_CODES = {
     415: "unsupported_media_type",
     422: "validation_error",
     429: "rate_limited",
+    502: "upstream_error",
+    503: "service_unavailable",
 }
 
 

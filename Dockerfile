@@ -1,10 +1,13 @@
 # Development image for the PersonaOS API. A multi-stage production image follows in Phase 10.
 FROM python:3.12-slim
 
+# MEM0_TELEMETRY / ANONYMIZED_TELEMETRY: privacy, no usage telemetry from Mem0 or Chroma.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    MEM0_TELEMETRY=False \
+    ANONYMIZED_TELEMETRY=False
 
 WORKDIR /app
 
