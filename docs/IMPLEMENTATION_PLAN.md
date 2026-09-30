@@ -65,8 +65,8 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 | 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | ✅ Verified 1 Oct 2026 |
 | 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | ✅ Verified 1 Oct 2026 |
 | 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | ✅ Verified 1 Oct 2026 |
-| 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | 🟨 Built, awaiting your verification |
-| 6 | LangGraph agent with tools | 3, 4, 5 | – | ⬜ |
+| 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ✅ Verified 1 Oct 2026 (with order/spacing fix) |
+| 6 | LangGraph agent with tools | 3, 4, 5 | – | 🟨 Built, awaiting your verification |
 | 7 | Memory lifecycle, supersession, privacy endpoints | 3, 6 | `CRON_SECRET` | ⬜ |
 | 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | ⬜ |
 | 9 | Analytics API and Streamlit dashboard | 5, 6, 7 | Firebase web app config | ⬜ |

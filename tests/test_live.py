@@ -104,3 +104,24 @@ def test_study_plan_with_real_model(live_client):
         print(f"  {t['due_at']}  {t['est_minutes']:>3} min  {t['title']}")
     assert len(body["tasks"]) >= 3
     assert any("6 pm" in p or "18" in p or "evening" in p for p in body["used_preferences"])
+
+
+def test_agent_creates_goal_with_real_model(live_client):
+    """Real LLM + real tools: the first Phase 6 scenario end to end."""
+    from sqlalchemy import select
+
+    from app.db.models import Goal
+
+    a = auth("test-live-a")
+    started = time.monotonic()
+    body = live_client.post(
+        "/chat", json={"message": "Add a goal to finish my ML course by 30 Nov"}, headers=a
+    ).json()
+    print(f"\nagent turn {time.monotonic() - started:.1f}s tools={body['tools_used']}")
+    print("reply:", body["reply"][:300])
+    assert "create_goal" in body["tools_used"]
+    app = live_client.app
+    with app.state.session_factory() as db:
+        goals = db.scalars(select(Goal)).all()
+    assert len(goals) == 1
+    assert goals[0].target_date is not None and goals[0].target_date.strftime("%m-%d") == "11-30"

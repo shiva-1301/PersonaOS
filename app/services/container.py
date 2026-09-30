@@ -21,8 +21,10 @@ from app.services.vectorstore import get_chroma_client
 
 
 class Services:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, session_factory=None):
         self.settings = settings
+        # DB sessions for work outside the request's own session (agent tools).
+        self.session_factory = session_factory
         self._lock = threading.RLock()
         self._cache: dict[str, Any] = {}
 
@@ -41,6 +43,7 @@ class Services:
             "chroma",
             "memory",
             "rag",
+            "agent_graph",
         ):
             self._cache[name] = value
         else:
@@ -83,3 +86,10 @@ class Services:
     @property
     def rag(self) -> RagService:
         return self._get("rag", lambda: RagService(self.settings, self.embedder, self.chroma))
+
+    @property
+    def agent_graph(self):
+        """The compiled LangGraph agent (built once; per-turn context comes via config)."""
+        from app.agent.graph import build_agent_graph  # late import: graph imports services
+
+        return self._get("agent_graph", build_agent_graph)

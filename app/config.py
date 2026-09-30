@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     CHAT_HISTORY_LIMIT: int = Field(default=20, ge=0, le=200)
     MEMORY_RECALL_K: int = Field(default=5, ge=1, le=50)
     MAX_MESSAGE_CHARS: int = Field(default=8000, ge=100)
+    # agent = LangGraph agent with tools (default); plain = Phase 3-4 chat, for debugging.
+    CHAT_MODE: Literal["agent", "plain"] = "agent"
 
     # --- Auth ---
     AUTH_PROVIDER: Literal["firebase", "fake"] = "firebase"

@@ -160,3 +160,25 @@ class Checks:
         n = len(self.failures)
         print("\nRESULT:", "PASS" if not n else f"FAIL ({n}): {self.failures}")
         return 0 if not n else 1
+
+
+def stream_chat(token: str, message: str) -> list[tuple[float, str, dict]]:
+    """POST /chat/stream; returns [(seconds_since_start, event, data), ...]."""
+    started = time.monotonic()
+    req = urllib.request.Request(
+        API + "/chat/stream",
+        method="POST",
+        data=json.dumps({"message": message}).encode(),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+    )
+    events, event = [], None
+    with urllib.request.urlopen(req, timeout=600) as resp:
+        for raw in resp:
+            line = raw.decode("utf-8").rstrip("\n")
+            if line.startswith("event: "):
+                event = line[len("event: ") :]
+            elif line.startswith("data: "):
+                events.append(
+                    (time.monotonic() - started, event, json.loads(line[len("data: ") :]))
+                )
+    return events

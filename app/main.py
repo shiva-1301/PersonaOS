@@ -38,7 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = make_session_factory(app.state.engine)
     app.state.verifier = build_verifier(settings)
     # Models, Chroma and Mem0 are built lazily on first use (see services/container.py).
-    app.state.services = Services(settings)
+    app.state.services = Services(settings, app.state.session_factory)
 
     app.add_middleware(UploadSizeLimitMiddleware, max_bytes=settings.MAX_UPLOAD_MB * 1024 * 1024)
     app.add_middleware(RequestIdMiddleware)

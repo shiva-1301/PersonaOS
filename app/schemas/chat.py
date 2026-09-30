@@ -34,6 +34,8 @@ class ChatOut(BaseModel):
     # Memory extraction runs after the reply: "pending" here, later "done" or "failed".
     memory_status: str
     sources: list[SourceOut] = []
+    # Names of the tools the agent used for this reply, in order (empty in plain mode).
+    tools_used: list[str] = []
 
 
 class SessionOut(BaseModel):

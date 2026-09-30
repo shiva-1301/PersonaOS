@@ -117,10 +117,13 @@ class MemoryService:
         messages: list[dict[str, str]],
         *,
         source: str = "chat",
+        infer: bool = True,
     ) -> list[str]:
-        """Extract memories from a conversation turn and register them in memory_meta."""
+        """Extract memories from a conversation turn and register them in memory_meta.
+
+        infer=False stores the message text verbatim (no LLM extraction)."""
         result = self._memory.add(
-            messages, user_id=_mem0_user_id(user_id), metadata={"source": source}
+            messages, user_id=_mem0_user_id(user_id), metadata={"source": source}, infer=infer
         )
         events = result.get("results", []) if isinstance(result, dict) else []
         now = datetime.now(UTC)
@@ -138,6 +141,12 @@ class MemoryService:
                 ).delete()
         db.commit()
         return saved
+
+    def remember(self, db: Session, user_id: uuid.UUID, fact: str) -> list[str]:
+        """Store a fact the user explicitly asked to be remembered, word for word."""
+        return self.save_turn(
+            db, user_id, [{"role": "user", "content": fact}], source="manual", infer=False
+        )
 
     @staticmethod
     def _upsert_meta(

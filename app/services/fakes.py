@@ -138,9 +138,17 @@ def _text_of(messages: list[BaseMessage], kind: str) -> str:
 
 
 class FakeChatModel(BaseChatModel):
+    """Never calls tools; bind_tools is accepted so the agent graph can run offline."""
+
+    bound_tools: list[str] = []
+
     @property
     def _llm_type(self) -> str:
         return "personaos-fake"
+
+    def bind_tools(self, tools, **kwargs):
+        self.bound_tools = [getattr(t, "name", str(t)) for t in tools]
+        return self
 
     def _generate(
         self,
@@ -160,14 +168,24 @@ class FakeChatModel(BaseChatModel):
 
 
 class ScriptedChatModel(BaseChatModel):
-    """Returns preset replies in order (the last one repeats) and records every prompt."""
+    """Returns preset replies in order (the last one repeats) and records every prompt.
 
-    replies: list[str]
+    A reply is a string, an AIMessage (e.g. with tool_calls), or a function of the
+    messages returning either, so a script can use ids returned by earlier tool calls.
+    """
+
+    replies: list[Any]
     prompts: list[list[BaseMessage]] = []
+    bound_tools: list[str] = []
+    # Tool names bound for each call ([] when called without tools).
+    tools_per_call: list[list[str]] = []
 
     @property
     def _llm_type(self) -> str:
         return "personaos-scripted"
+
+    def bind_tools(self, tools, **kwargs):
+        return self.model_copy(update={"bound_tools": [getattr(t, "name", str(t)) for t in tools]})
 
     def _generate(
         self,
@@ -176,6 +194,22 @@ class ScriptedChatModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> ChatResult:
+        # model_copy() shares these lists, so bound copies record into the original.
         self.prompts.append(list(messages))
-        text = self.replies[min(len(self.prompts), len(self.replies)) - 1]
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])
+        self.tools_per_call.append(list(self.bound_tools))
+        reply = self.replies[min(len(self.prompts), len(self.replies)) - 1]
+        if callable(reply):
+            reply = reply(messages)
+        if isinstance(reply, AIMessage):
+            # A fresh message per call, like a real model (a reused object keeps its id,
+            # and LangGraph would treat a repeat as an update of the earlier message).
+            n = len(self.prompts)
+            message = reply.model_copy(
+                update={
+                    "id": None,
+                    "tool_calls": [{**tc, "id": f"{tc['id']}_{n}"} for tc in reply.tool_calls],
+                }
+            )
+        else:
+            message = AIMessage(content=reply)
+        return ChatResult(generations=[ChatGeneration(message=message)])

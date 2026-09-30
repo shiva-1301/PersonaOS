@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 5 (goals, tasks and study plans)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 6 (agent with tools, streaming chat)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -47,6 +47,8 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 .venv\Scripts\python.exe scripts\verify_documents_docker.py
 # Goals, tasks and a real study plan: window, weekly budget, preferences, progress, isolation
 .venv\Scripts\python.exe scripts\verify_planner_docker.py
+# The agent with real tools: goals, tasks, notes, plans, prompt injection, isolation, streaming
+.venv\Scripts\python.exe scripts\verify_agent_docker.py
 ```
 
 Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
@@ -76,6 +78,18 @@ Invoke-RestMethod "http://localhost:8000/tasks?due=this_week" -Headers $h
 ```
 
 Chat answers cite the documents they used in `sources`. Document text is always passed to the model as clearly delimited, untrusted data.
+
+### The agent
+
+Chat runs a LangGraph agent that can use tools on your behalf: create and list goals, add and update tasks, list this week's tasks, search and summarise your notes, generate study plans, and remember things you ask it to. `tools_used` in the response shows what it did. It can't delete anything, and it only ever acts on your own data.
+
+```powershell
+# Ask in plain language; the agent picks the tools
+Invoke-RestMethod -Method Post http://localhost:8000/chat -Headers $h -ContentType application/json -Body '{"message":"Add a goal to finish my ML course by 30 Nov"}'
+
+# Streaming (Server-Sent Events): token / reset / tool / done / error events
+curl.exe -N -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d '{\"message\":\"What do my notes say about entropy?\"}' http://localhost:8000/chat/stream
+```
 
 If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
 

@@ -6,7 +6,7 @@ Memory extraction (`save_turn`) runs after the response is sent; see routers/cha
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -42,6 +42,7 @@ class ChatTurn:
     reply: str
     memories_used: int
     sources: list[Source]
+    tools_used: list[str] = field(default_factory=list)
 
 
 def get_owned_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> ChatSession:
