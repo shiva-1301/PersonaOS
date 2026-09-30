@@ -31,7 +31,34 @@ os.environ.setdefault("MEM0_TELEMETRY", "False")
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 
 # Offline providers: CI and tests never call a real LLM or embedding service.
-OFFLINE = {"LLM_PROVIDER": "fake", "EMBEDDING_PROVIDER": "fake", "LLM_RATE_LIMIT_ATTEMPTS": 1}
+OFFLINE = {
+    "LLM_PROVIDER": "fake",
+    "MEMORY_LLM_PROVIDER": "fake",
+    "EMBEDDING_PROVIDER": "fake",
+    "LLM_RATE_LIMIT_ATTEMPTS": 1,
+}
+
+# Settings that must never leak in from the developer's shell (Settings reads os.environ
+# even with _env_file=None). Every Settings field, plus provider-family prefixes.
+_SCRUB_PREFIXES = ("LLM_", "MEMORY_LLM_", "OLLAMA_", "GEMINI_", "EMBEDDING_", "MEMORY_")
+
+
+def _scrubbed_names() -> set[str]:
+    names = set(Settings.model_fields)
+    names |= {k for k in os.environ if k.upper().startswith(_SCRUB_PREFIXES)}
+    return names
+
+
+@pytest.fixture(autouse=True)
+def _isolate_from_shell_env(request, monkeypatch):
+    """Tests use their own fake/test defaults, whatever the developer has exported.
+
+    Live tests (marker `live`) opt out: they deliberately use the real configuration.
+    """
+    if request.node.get_closest_marker("live"):
+        return
+    for name in _scrubbed_names():
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture

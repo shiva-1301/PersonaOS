@@ -31,6 +31,7 @@ class SessionNotFound(Exception):
 @dataclass(frozen=True)
 class ChatTurn:
     session_id: uuid.UUID
+    user_message_id: uuid.UUID
     reply: str
     memories_used: int
 
@@ -127,15 +128,18 @@ def run_chat_turn(
         },
     )
 
+    user_message = ChatMessage(
+        session_id=session.id,
+        user_id=user.id,
+        role="user",
+        content=message,
+        created_at=asked_at,
+        # Memory extraction for this turn runs after the response (routers/chat.py).
+        memory_status="pending",
+    )
     db.add_all(
         [
-            ChatMessage(
-                session_id=session.id,
-                user_id=user.id,
-                role="user",
-                content=message,
-                created_at=asked_at,
-            ),
+            user_message,
             ChatMessage(
                 session_id=session.id,
                 user_id=user.id,
@@ -147,4 +151,9 @@ def run_chat_turn(
     )
     session.updated_at = answered_at
     db.commit()
-    return ChatTurn(session_id=session.id, reply=reply, memories_used=len(memories))
+    return ChatTurn(
+        session_id=session.id,
+        user_message_id=user_message.id,
+        reply=reply,
+        memories_used=len(memories),
+    )

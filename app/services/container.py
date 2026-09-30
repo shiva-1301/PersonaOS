@@ -9,7 +9,12 @@ import threading
 from typing import Any
 
 from app.config import Settings
-from app.services.llm import get_chat_model, get_embedder, get_memory_model
+from app.services.llm import (
+    chat_model_settings,
+    get_chat_model,
+    get_embedder,
+    get_memory_model,
+)
 from app.services.memory_service import MemoryService, build_memory
 from app.services.vectorstore import get_chroma_client
 
@@ -34,7 +39,7 @@ class Services:
 
     @property
     def chat_model(self):
-        return self._get("chat_model", lambda: get_chat_model(self.settings))
+        return self._get("chat_model", lambda: get_chat_model(chat_model_settings(self.settings)))
 
     @property
     def memory_model(self):

@@ -36,6 +36,8 @@ DOCUMENT_SOURCES = ("upload", "drive")
 MESSAGE_ROLES = ("user", "assistant", "system", "tool")
 MEMORY_STATES = ("active", "stale", "archived", "superseded")
 MEMORY_SOURCES = ("chat", "document", "manual")
+# Background memory extraction for a user message: pending -> done | failed.
+MEMORY_STATUSES = ("pending", "done", "failed")
 
 
 class Base(DeclarativeBase):
@@ -87,6 +89,8 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
         _one_of("role", MESSAGE_ROLES, "role"),
+        # NULL passes a CHECK in Postgres, so assistant rows (no status) are allowed.
+        _one_of("memory_status", MEMORY_STATUSES, "memory_status"),
         Index("ix_chat_messages_session_id_created_at", "session_id", "created_at"),
         Index("ix_chat_messages_user_id", "user_id"),
     )
@@ -99,6 +103,8 @@ class ChatMessage(Base):
     user_id: Mapped[uuid.UUID] = _user_fk()
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Set on user messages only: state of the background memory extraction for this turn.
+    memory_status: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = _created_at()
 
 

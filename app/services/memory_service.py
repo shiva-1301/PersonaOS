@@ -33,8 +33,9 @@ logger = logging.getLogger(__name__)
 EXTRACTION_INSTRUCTIONS = """\
 Only extract durable facts that the USER states about themselves: preferences, habits,
 schedule, goals, studies, work, constraints and personal details they volunteer.
-Do NOT store the assistant's suggestions, general knowledge, greetings, or one-off
-questions. Never store passwords, API keys, card numbers or other secrets.
+Questions and requests are not facts: "When should I study?" reveals nothing durable,
+so extract nothing from it. Do NOT store the assistant's suggestions, general knowledge,
+greetings, or guesses. Never store passwords, API keys, card numbers or other secrets.
 Write each memory as a short third-person statement about the user."""
 
 HIDDEN_STATES = ("archived", "superseded")

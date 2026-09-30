@@ -1,0 +1,8 @@
+# Local verification only: run the api with FAKE auth (tokens like "test-verify-a").
+# Used by scripts/verify_memory_docker.py --auth fake. Fake auth is refused in production.
+#   docker compose -f docker-compose.yml -f docker-compose.fake-auth.yml up -d api
+services:
+  api:
+    environment:
+      APP_ENV: dev
+      AUTH_PROVIDER: fake

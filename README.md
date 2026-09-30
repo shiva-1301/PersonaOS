@@ -40,7 +40,11 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 ```powershell
 .\scripts\test.ps1 -m live -s                          # real Gemini + Ollama, fake data only
 .venv\Scripts\python.exe scripts\smoke_tool_calling.py  # compare tool calling across models
+# Full Docker memory check: store -> recall -> `docker compose restart api` -> recall -> user B sees nothing
+.venv\Scripts\python.exe scripts\verify_memory_docker.py
 ```
+
+Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
 
 ### Calling the API as a real user
 

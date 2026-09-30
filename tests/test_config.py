@@ -96,3 +96,12 @@ def test_docs_hidden_in_production():
         FIREBASE_PROJECT_ID="demo-project",
     )
     assert TestClient(create_app(s)).get("/docs").status_code == 404
+
+
+def test_shell_provider_vars_do_not_leak_into_tests():
+    """The autouse fixture in conftest removes provider settings exported in the shell."""
+    s = Settings(_env_file=None)
+    assert (s.LLM_PROVIDER, s.LLM_MODEL) == ("gemini", None)
+    assert (s.MEMORY_LLM_PROVIDER, s.MEMORY_LLM_MODEL) == (None, None)
+    assert s.OLLAMA_BASE_URL == "http://127.0.0.1:11434"
+    assert s.GEMINI_API_KEY is None

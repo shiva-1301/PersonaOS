@@ -1,9 +1,10 @@
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from langchain_core.exceptions import ModelRateLimitError
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db.models import ChatMessage, ChatSession
 from app.deps import CurrentUser, DbSession
@@ -18,14 +19,36 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 SESSION_NOT_FOUND = "Chat session not found"
 
 
-def save_turn_in_background(app, user_id: uuid.UUID, messages: list[dict[str, str]]) -> None:
-    """Runs after the response is sent, with its own DB session. Failures are logged."""
+def save_turn_in_background(
+    app, user_id: uuid.UUID, message_id: uuid.UUID, messages: list[dict[str, str]]
+) -> None:
+    """Runs after the response is sent, with its own DB session.
+
+    Records the outcome on the user message (`memory_status`: done | failed) so clients
+    can see when a turn's memories are available. Failures are logged, never raised.
+    """
+    started = time.perf_counter()
+    status_value, saved = "failed", []
     try:
         with app.state.session_factory() as db:
             saved = app.state.services.memory.save_turn(db, user_id, messages)
-        logger.info("Memory saved", extra={"new_memories": len(saved)})
+        status_value = "done"
     except Exception:
         logger.exception("Memory save failed", extra={"user_id": str(user_id)})
+    finally:
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        try:
+            with app.state.session_factory() as db:
+                db.execute(
+                    update(ChatMessage)
+                    .where(ChatMessage.id == message_id, ChatMessage.user_id == user_id)
+                    .values(memory_status=status_value)
+                )
+                db.commit()
+        except Exception:
+            logger.exception("Could not record memory status")
+    if status_value == "done":
+        logger.info("Memory saved", extra={"new_memories": len(saved), "extraction_ms": elapsed_ms})
 
 
 @router.post("", response_model=ChatOut)
@@ -63,13 +86,22 @@ def chat(
             status.HTTP_502_BAD_GATEWAY, "The assistant is temporarily unavailable"
         ) from None
 
+    # Only the user's own words are sent for extraction. Including the assistant reply
+    # made the extractor invent "facts" from the assistant's questions.
     background.add_task(
         save_turn_in_background,
         request.app,
         user.id,
-        [{"role": "user", "content": body.message}, {"role": "assistant", "content": turn.reply}],
+        turn.user_message_id,
+        [{"role": "user", "content": body.message}],
     )
-    return ChatOut(session_id=turn.session_id, reply=turn.reply, memories_used=turn.memories_used)
+    return ChatOut(
+        session_id=turn.session_id,
+        message_id=turn.user_message_id,
+        reply=turn.reply,
+        memories_used=turn.memories_used,
+        memory_status="pending",
+    )
 
 
 @router.get("/sessions", response_model=list[SessionOut])

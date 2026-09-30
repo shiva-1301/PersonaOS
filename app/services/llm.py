@@ -120,6 +120,25 @@ def memory_model_settings(settings: Settings) -> Settings:
     )
 
 
+def chat_model_settings(settings: Settings) -> Settings:
+    """Settings view for the chat model.
+
+    If chat and memory extraction use the SAME Ollama model, both must request the same
+    context size: Ollama reloads a model whenever num_ctx changes, and alternating
+    8k/16k requests made it evict and reload qwen on every turn.
+    """
+    mem = memory_model_settings(settings)
+    if (
+        settings.LLM_PROVIDER == "ollama"
+        and mem.LLM_PROVIDER == "ollama"
+        and chat_model_name(settings) == chat_model_name(mem)
+    ):
+        return settings.model_copy(
+            update={"OLLAMA_NUM_CTX": max(settings.OLLAMA_NUM_CTX, mem.OLLAMA_NUM_CTX)}
+        )
+    return settings
+
+
 def get_memory_model(settings: Settings) -> BaseChatModel:
     # Mem0's only LLM call here is fact extraction, which must return a JSON object.
     return get_chat_model(memory_model_settings(settings), json_mode=True)
@@ -150,6 +169,8 @@ def _ollama_embedder(settings: Settings) -> Embeddings:
         model=settings.EMBEDDING_MODEL,
         base_url=settings.OLLAMA_BASE_URL,
         client_kwargs={"timeout": settings.LLM_TIMEOUT_SECONDS},
+        # 0 GPU layers = CPU. Keeps VRAM for the chat model (see EMBEDDING_ON_CPU).
+        num_gpu=0 if settings.EMBEDDING_ON_CPU else None,
     )
     if settings.EMBEDDING_MODEL.startswith("nomic-embed-text"):
         return TaskPrefixedEmbeddings(embedder, "search_query: ", "search_document: ")

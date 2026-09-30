@@ -20,6 +20,7 @@ from app.services.llm import (
     TaskPrefixedEmbeddings,
     backoff_delay,
     chat_model_name,
+    chat_model_settings,
     embedding_space_id,
     get_chat_model,
     get_embedder,
@@ -246,3 +247,32 @@ def test_memory_model_can_differ_from_chat_model():
 def test_memory_ctx_must_fit_mem0_prompt():
     with pytest.raises(ValueError):
         _settings(MEMORY_OLLAMA_NUM_CTX=8192)
+
+
+# --------------------------------------------------------------------------- Ollama VRAM
+
+
+def test_same_ollama_model_shares_one_context_size():
+    """Different num_ctx for chat vs extraction made Ollama reload qwen every turn."""
+    s = _settings(LLM_PROVIDER="ollama", MEMORY_LLM_PROVIDER="ollama")
+    assert chat_model_settings(s).OLLAMA_NUM_CTX == memory_model_settings(s).OLLAMA_NUM_CTX
+    assert get_chat_model(chat_model_settings(s)).num_ctx == get_memory_model(s).num_ctx
+
+
+def test_different_models_keep_their_own_context():
+    s = _settings(
+        LLM_PROVIDER="ollama",
+        LLM_MODEL="llama3.1:8b",
+        MEMORY_LLM_PROVIDER="ollama",
+        MEMORY_LLM_MODEL="qwen2.5:7b",
+    )
+    assert chat_model_settings(s).OLLAMA_NUM_CTX == s.OLLAMA_NUM_CTX == 8192
+    g = _settings(LLM_PROVIDER="gemini", MEMORY_LLM_PROVIDER="ollama")
+    assert chat_model_settings(g) is g
+
+
+def test_ollama_embeddings_run_on_cpu_by_default():
+    e = get_embedder(_settings(EMBEDDING_PROVIDER="ollama"))
+    assert e.inner.num_gpu == 0
+    e2 = get_embedder(_settings(EMBEDDING_PROVIDER="ollama", EMBEDDING_ON_CPU=False))
+    assert e2.inner.num_gpu is None

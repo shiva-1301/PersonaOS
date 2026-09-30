@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     LLM_RATE_LIMIT_ATTEMPTS: int = Field(default=4, ge=1, le=10)
     EMBEDDING_PROVIDER: Literal["ollama", "gemini", "fake"] = "ollama"
     EMBEDDING_MODEL: str = "nomic-embed-text"
+    # Run Ollama embeddings on CPU. The embedding model is tiny (fast on CPU), and keeping
+    # it off the GPU stops Ollama evicting/reloading the chat model on small GPUs.
+    EMBEDDING_ON_CPU: bool = True
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     # Context window for Ollama chat models (memories + history need more than the default).
     OLLAMA_NUM_CTX: int = Field(default=8192, ge=2048)

@@ -19,8 +19,12 @@ class ChatIn(BaseModel):
 
 class ChatOut(BaseModel):
     session_id: uuid.UUID
+    # The user message of this turn; poll GET /chat/sessions/{id} for its memory_status.
+    message_id: uuid.UUID
     reply: str
     memories_used: int
+    # Memory extraction runs after the reply: "pending" here, later "done" or "failed".
+    memory_status: str
 
 
 class SessionOut(BaseModel):
@@ -35,8 +39,10 @@ class SessionOut(BaseModel):
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: uuid.UUID
     role: str
     content: str
+    memory_status: str | None = None
     created_at: datetime
 
 

@@ -141,3 +141,41 @@ Switching is config-only (`LLM_PROVIDER`, `LLM_MODEL`).
 | 2026-10-01 | Default Ollama `num_ctx` for chat is **8192** (`OLLAMA_NUM_CTX`). | Enough for the system prompt, memories and 20 history messages. |
 | 2026-10-01 | Pinned: `langchain-core 1.6.6`, `langchain-google-genai 4.4.0`, `langchain-ollama 1.1.0`, `mem0ai 2.2.1`, `chromadb 1.5.9`, `tzdata 2026.4`. No PyTorch. Transitive heavy dependencies are `onnxruntime`, `grpcio`, `kubernetes` (from chromadb) and `qdrant-client` (from mem0). All native modules load under Smart App Control. | Latest at build time, and `pip check` is clean. |
 | 2026-10-01 | Removed `openai` from `LLM_PROVIDER`/`EMBEDDING_PROVIDER`, and `OPENAI_*` from config. | Not installed or tested, and advertising it would be misleading. Adding a provider is one builder function in `llm.py`. |
+
+## Phase 3 fix: "User A's follow-up returns memories_used=0" (2026-10-01)
+
+### Evidence gathered before any code change
+- **Postgres ↔ Chroma:** all 8 `memory_meta` rows had a matching vector in `personaos_mem0__ollama-nomic-embed-text`, with the correct `user_id` in the vector metadata. There were 0 orphans in either direction.
+- **Retrieval run directly inside the container:** for user A, the top hit for both study-time questions was "User studies best after 6 pm and prefers quiet evenings" (relevance 0.71 / 0.78). User B got only B's own memory. So persistence, the `user_id` filter and ranking were correct.
+- **Timeline from `docker compose logs api` plus the chat_messages timestamps:**
+
+  | Time | Event |
+  |---|---|
+  | 20:26:21 | A says "I study best after 6 pm…", reply at 20:26:35 |
+  | 20:26:35 | A's new-session question; the reply came at 20:26:40, before any memory existed |
+  | 20:26:48 | A's next question; recall ran immediately, while extraction was still running (the reply took until 20:27:23) |
+  | 20:27:09 | The first turn's extraction finally inserted the memory (**48 s after the message**) |
+  | 20:29:14 | After the restart: the reply was *"Given that you study best after 6 pm…"*, so the memory *was* used |
+
+- **Ollama `server.log`:** qwen2.5:7b and nomic-embed-text were **evicted and reloaded every few seconds** ("model predicted to exceed available memory, evicting"). Chat requested `num_ctx=8192` and extraction `16384`, and Ollama must reload a model to change its context size. The embedder and qwen (4.8 to 5.2 GiB) also didn't fit together in the 4.7 GiB of free VRAM.
+
+### Root cause (in plain words)
+Memories were never lost or mixed between users. **They weren't ready yet.** Memory extraction runs in the background after the reply, and on this 6 GB GPU it took 25 to 48 s because Ollama kept swapping models in and out of VRAM. The follow-up questions were asked inside that window, so there was nothing to recall. There was also no way to *see* whether extraction had finished, so "not yet" looked the same as "broken".
+
+### Fixes
+| Decision | Reason |
+|---|---|
+| **`EMBEDDING_ON_CPU=true` (default):** Ollama embeddings run with `num_gpu=0`. | nomic-embed-text (137M) takes ~0.03 s per call on CPU and no longer competes with the chat model for VRAM. Measured: 0 evictions and 0 reloads during a full verification run. |
+| When chat and extraction use the **same Ollama model**, chat uses the memory context size (`max(OLLAMA_NUM_CTX, MEMORY_OLLAMA_NUM_CTX)`, i.e. 16384). Different models keep their own. | One context size means no reload between chat and extraction. |
+| New column **`chat_messages.memory_status`** (`pending` → `done` / `failed`) on user messages, with migration `cdf88b5411e1`. It's returned by `POST /chat` (`message_id`, `memory_status`) and `GET /chat/sessions/{id}`. The background task records the outcome and logs `extraction_ms`. | Extraction is asynchronous by design (replies shouldn't wait for it), so its completion must be observable. Tests and scripts poll it with a timeout instead of sleeping, and the Phase 9 UI can show "remembering…". The status update is scoped to the message's owner. |
+| **Only the user's own words are sent to Mem0** (not the assistant reply), and the instructions now say questions and requests aren't facts. | The assistant's clarifying questions had produced invented memories such as "User plans to study for a certain duration per session", which crowd out real facts in recall. |
+| **Measured after the fix (Docker, real models):** reply 3.8 s, and extraction done **4.2 s** after the reply when warm. After a cold `api` restart and model load: reply 16.1 s, extraction 13.6 s. | Before: 25 to 48 s extraction with constant reloads. |
+
+### Test isolation fix
+| Decision | Reason |
+|---|---|
+| An autouse fixture in `tests/conftest.py` deletes **every `Settings` field name and any `LLM_*`, `MEMORY_LLM_*`, `MEMORY_*`, `OLLAMA_*`, `GEMINI_*`, `EMBEDDING_*` variable** from the process environment for each test. Tests marked `live` opt out. The offline defaults now also pin `MEMORY_LLM_PROVIDER=fake`. | `Settings(_env_file=None)` still reads `os.environ`. With provider variables exported, several "offline" tests picked up the developer's config, and `test_memory_carries_across_sessions` **actually called the real Ollama** for extraction (MEMORY_LLM_PROVIDER wasn't pinned). Verified afterwards: 106/106 pass with hostile variables exported, and the Ollama log shows **0 requests** during the run. |
+
+### Regression coverage
+- `tests/test_memory_regression.py` (offline): A stores a memory (extraction polled until `done`); a new session recalls the same memory ID and it appears in the **injected system prompt**. Then every service object is discarded (the Chroma client is closed and the DB engine disposed) and rebuilt on the same Chroma directory and Postgres database, the offline equivalent of a restart. A recalls the same memory ID again, it's injected again, and B gets `memories_used == 0` with nothing from A in either B's prompt or B's recall. Also covered: `memory_status` done/failed, only user words sent for extraction, and status updates scoped to the owner.
+- `scripts/verify_memory_docker.py` (real Docker, real models): uses a unique random fake fact per run, so earlier memories can't make it pass. It polls extraction, checks new-session recall both **via the API and via the app's recall inside the container**, runs `docker compose restart api`, repeats the checks, confirms B sees nothing, and checks the container uses `host.docker.internal` for Ollama. `--auth fake` (default) temporarily runs the api with `docker-compose.fake-auth.yml` and cleans up afterwards (Postgres, Mem0 vectors, Mem0 SQLite). `--auth firebase` uses the real test users.

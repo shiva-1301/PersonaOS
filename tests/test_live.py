@@ -6,6 +6,7 @@ Uses fake data only, a temporary Chroma directory and the personaos_test databas
 """
 
 import re
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 from tests.conftest import ROOT, auth
+from tests.test_memory_regression import wait_for_memory
 
 pytestmark = pytest.mark.live
 
@@ -53,6 +55,11 @@ def test_remembers_preference_across_sessions(live_client):
         "/chat", json={"message": "I'm bad at mornings. I study best after 6 pm."}, headers=a
     )
     assert first.status_code == 200, first.text
+    started = time.monotonic()
+    wait_for_memory(
+        live_client, a, first.json()["session_id"], first.json()["message_id"], timeout=300
+    )
+    print(f"extraction done {time.monotonic() - started:.1f}s after the reply")
 
     second = live_client.post(
         "/chat", json={"message": "When should I schedule my study time?"}, headers=a
