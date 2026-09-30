@@ -7,11 +7,13 @@ import logging
 
 from fastapi import FastAPI
 
+from app.auth.jwt_verify import build_verifier
 from app.config import Settings, get_settings
+from app.db.session import make_engine, make_session_factory
 from app.errors import register_error_handlers
 from app.logging_config import setup_logging
 from app.middleware import RequestIdMiddleware
-from app.routers import health
+from app.routers import health, users
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
     )
     app.state.settings = settings
+    # The engine connects lazily, so creating it never blocks startup.
+    app.state.engine = make_engine(settings.DATABASE_URL)
+    app.state.session_factory = make_session_factory(app.state.engine)
+    app.state.verifier = build_verifier(settings)
 
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
 
     app.include_router(health.router)
+    app.include_router(users.router)
 
     logger.info(
         "PersonaOS API starting",

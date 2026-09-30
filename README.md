@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 1 (scaffold)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 2 (database + auth)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -30,6 +30,17 @@ curl.exe http://localhost:8000/health    # -> {"status":"ok"}
 
 # 5. Stop (data volumes are kept)
 .\scripts\down.ps1
+```
+
+Database migrations run automatically when the `api` container starts. From the host: `alembic upgrade head` (or `alembic downgrade base`).
+Tests need Postgres running (`docker compose up -d postgres`). They use a separate `personaos_test` database, which they create themselves.
+
+### Calling the API as a real user
+
+```powershell
+# Firebase test user -> ID token (password prompt is hidden). Needs FIREBASE_WEB_API_KEY in .env.
+$t = .venv\Scripts\python.exe scripts\get_id_token.py --email test-a@example.com
+curl.exe -H "Authorization: Bearer $t" http://localhost:8000/me
 ```
 
 If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.

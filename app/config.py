@@ -2,11 +2,17 @@
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AppEnv = Literal["dev", "test", "production"]
+
+
+def build_postgres_url(user: str, password: str | None, host: str, port: int, db: str) -> str:
+    auth = quote(user, safe="") + (f":{quote(password, safe='')}" if password else "")
+    return f"postgresql+psycopg://{auth}@{host}:{port}/{db}"
 
 
 class Settings(BaseSettings):
@@ -24,14 +30,20 @@ class Settings(BaseSettings):
     LOG_FORMAT: Literal["json", "text"] = "json"
 
     # --- Database ---
-    DATABASE_URL: str = "postgresql+psycopg://personaos@localhost:5432/personaos"
+    # If DATABASE_URL is blank it is built from the POSTGRES_* values (host-side runs).
+    DATABASE_URL: str | None = None
+    POSTGRES_USER: str = "personaos"
+    POSTGRES_PASSWORD: SecretStr | None = None
+    POSTGRES_DB: str = "personaos"
+    POSTGRES_HOST: str = "127.0.0.1"  # not "localhost": on Windows that tries IPv6 first and hangs
+    POSTGRES_HOST_PORT: int = 5432
 
     # --- LLM / embeddings (swappable by config only) ---
     LLM_PROVIDER: Literal["gemini", "ollama", "openai", "fake"] = "gemini"
     LLM_MODEL: str | None = None
     EMBEDDING_PROVIDER: Literal["ollama", "gemini", "openai", "fake"] = "ollama"
     EMBEDDING_MODEL: str = "nomic-embed-text"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     GEMINI_API_KEY: SecretStr | None = None
     OPENAI_API_KEY: SecretStr | None = None
     OPENAI_BASE_URL: str | None = None
@@ -58,6 +70,18 @@ class Settings(BaseSettings):
     def _forbid_fake_auth_in_production(self) -> "Settings":
         if self.APP_ENV == "production" and self.AUTH_PROVIDER == "fake":
             raise ValueError("AUTH_PROVIDER=fake is not allowed when APP_ENV=production")
+        return self
+
+    @model_validator(mode="after")
+    def _default_database_url(self) -> "Settings":
+        if not self.DATABASE_URL:
+            self.DATABASE_URL = build_postgres_url(
+                self.POSTGRES_USER,
+                self.POSTGRES_PASSWORD.get_secret_value() if self.POSTGRES_PASSWORD else None,
+                self.POSTGRES_HOST,
+                self.POSTGRES_HOST_PORT,
+                self.POSTGRES_DB,
+            )
         return self
 
     @property

@@ -25,7 +25,10 @@ services:
         required: false
     environment:
       # Container-specific overrides; everything else comes from .env.
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-personaos}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-personaos}
+      # Blank DATABASE_URL -> the app builds it (URL-escaped) from POSTGRES_* below.
+      DATABASE_URL: ""
+      POSTGRES_HOST: postgres
+      POSTGRES_HOST_PORT: "5432"
       CHROMA_PATH: /data/chroma
       OLLAMA_BASE_URL: http://host.docker.internal:11434
     extra_hosts:

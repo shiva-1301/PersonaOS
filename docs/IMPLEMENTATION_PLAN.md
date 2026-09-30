@@ -61,8 +61,8 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 
 | Phase | Deliverable | Depends on | You provide beforehand | Status |
 |---|---|---|---|---|
-| 1 | App scaffold, Docker Compose, config, `/health` | – | Docker Desktop running | 🟨 Built, awaiting your verification |
-| 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | ⬜ |
+| 1 | App scaffold, Docker Compose, config, `/health` | – | Docker Desktop running | ✅ Verified 30 Sep 2026 |
+| 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | 🟨 Built, awaiting your verification |
 | 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | ⬜ |
 | 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | ⬜ |
 | 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ⬜ |
@@ -115,10 +115,10 @@ curl.exe -i http://localhost:8000/health
 
 **Build**
 - `app/db/session.py` (engine, `SessionLocal`, `get_db`).
-- `app/db/models.py` covering `users` (with a `timezone` column added), `chat_sessions`, `chat_messages`, `goals`, `tasks`, `documents`, `memory_meta` and `google_tokens` (a generalised `calendar_tokens` with a `scopes` column; logged in DECISIONS). All tables use UUID primary keys, timezone-aware UTC timestamps, constrained status strings and `ON DELETE CASCADE` from `users`.
+- `app/db/models.py` covering `users` (with a `timezone` column added; full list of schema additions in DECISIONS.md), `chat_sessions`, `chat_messages`, `goals`, `tasks`, `documents`, `memory_meta` and `google_tokens` (a generalised `calendar_tokens` with a `scopes` column; logged in DECISIONS). All tables use UUID primary keys, timezone-aware UTC timestamps, constrained status strings and `ON DELETE CASCADE` from `users`.
 - Indexes on `user_id` everywhere, `(user_id, status)` on tasks and goals, and `(user_id, state)` on memory_meta.
 - An Alembic initial migration that runs automatically on container start. `upgrade head` and `downgrade base` are both verified.
-- `app/auth/jwt_verify.py`: a `Verifier` interface with a Firebase implementation (`firebase-admin` `verify_id_token`, which checks signature, issuer, audience and expiry) and a `FakeVerifier` that is allowed only when `APP_ENV` is `test` or `dev`. Startup fails if `production` is paired with `fake`.
+- `app/auth/jwt_verify.py`: a `Verifier` interface with a Firebase implementation (PyJWT against Google's x509 certs, cached per `max-age`, checking signature, issuer, audience, expiry, `iat`, `auth_time` and `sub`; chosen over `firebase-admin`, see DECISIONS.md) and a `FakeVerifier` that is allowed only when `APP_ENV` is `test` or `dev`. Startup fails if `production` is paired with `fake`.
 - `app/deps.py` `get_current_user`: reads the Bearer token, verifies it, and finds or creates the user by `auth_uid`. Returns 401 on a missing, invalid or expired token.
 - `GET /me`.
 - A consistent error envelope: `{"error": {"code", "message"}}`.

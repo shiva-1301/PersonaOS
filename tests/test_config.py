@@ -3,22 +3,55 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from sqlalchemy.engine import make_url
 
+from app.auth.jwt_verify import FirebaseVerifier, build_verifier
 from app.config import Settings
 from app.main import create_app
 
 
 def test_starts_without_optional_integrations():
-    s = Settings(_env_file=None, APP_ENV="test")
+    s = Settings(_env_file=None, APP_ENV="test", FIREBASE_PROJECT_ID="demo-project")
     assert s.GOOGLE_CLIENT_ID is None
     assert s.CRON_SECRET is None
+    assert s.GEMINI_API_KEY is None
     assert s.google_enabled is False
-    create_app(s)  # must not raise
+    app = create_app(s)  # must not raise, and must not need a reachable DB
+    assert isinstance(app.state.verifier, FirebaseVerifier)
+
+
+def test_firebase_auth_requires_project_id():
+    with pytest.raises(RuntimeError, match="FIREBASE_PROJECT_ID"):
+        create_app(Settings(_env_file=None, APP_ENV="test", AUTH_PROVIDER="firebase"))
 
 
 def test_fake_auth_forbidden_in_production():
     with pytest.raises(ValidationError, match="AUTH_PROVIDER=fake"):
         Settings(_env_file=None, APP_ENV="production", AUTH_PROVIDER="fake")
+
+
+def test_build_verifier_refuses_fake_outside_dev_test():
+    s = Settings(_env_file=None, APP_ENV="test", AUTH_PROVIDER="fake")
+    object.__setattr__(s, "APP_ENV", "production")  # bypass validation deliberately
+    with pytest.raises(RuntimeError, match="Fake auth"):
+        build_verifier(s)
+
+
+def test_database_url_built_and_escaped():
+    s = Settings(
+        _env_file=None,
+        POSTGRES_USER="me",
+        POSTGRES_PASSWORD="p@ss/w:rd% x",
+        POSTGRES_DB="db1",
+        POSTGRES_HOST_PORT=5433,
+    )
+    assert s.DATABASE_URL == "postgresql+psycopg://me:p%40ss%2Fw%3Ard%25%20x@127.0.0.1:5433/db1"
+    assert make_url(s.DATABASE_URL).password == "p@ss/w:rd% x"
+
+
+def test_explicit_database_url_wins():
+    s = Settings(_env_file=None, DATABASE_URL="postgresql+psycopg://x@db:5432/y")
+    assert s.DATABASE_URL == "postgresql+psycopg://x@db:5432/y"
 
 
 def test_secrets_are_masked():
@@ -56,5 +89,10 @@ def test_invalid_provider_rejected():
 
 
 def test_docs_hidden_in_production():
-    s = Settings(_env_file=None, APP_ENV="production", AUTH_PROVIDER="firebase")
+    s = Settings(
+        _env_file=None,
+        APP_ENV="production",
+        AUTH_PROVIDER="firebase",
+        FIREBASE_PROJECT_ID="demo-project",
+    )
     assert TestClient(create_app(s)).get("/docs").status_code == 404
