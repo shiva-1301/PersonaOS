@@ -20,3 +20,7 @@ Thumbs.db
 
 # Tooling
 .vscode/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/

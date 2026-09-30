@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-personaos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-personaos}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      # Bound to localhost only; used by local tools and tests.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Container-specific overrides; everything else comes from .env.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-personaos}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-personaos}
+      CHROMA_PATH: /data/chroma
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - chroma_data:/data/chroma
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  chroma_data:

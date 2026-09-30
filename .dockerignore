@@ -1,0 +1,14 @@
+.git
+.venv
+.env
+.env.*
+!.env.example
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+chroma_data
+docs
+tests
+frontend
+scripts

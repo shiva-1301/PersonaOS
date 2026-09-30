@@ -1,0 +1,7 @@
+# Runtime dependencies (pinned; verified together with `pip check`).
+# Later phases add: SQLAlchemy/Alembic/psycopg (2), LangChain/Mem0/Chroma (3), parsers (4), LangGraph (6).
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-json-logger==4.2.0
