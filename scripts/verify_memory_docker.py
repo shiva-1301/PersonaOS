@@ -237,6 +237,9 @@ def main() -> int:
         print(f"  memories_used={before['memories_used']} reply={before['reply'][:140]!r}")
         check(before["session_id"] != first["session_id"], "new session")
         check(before["memories_used"] >= 1, "memories injected into the prompt")
+        # The codename is random and this session has no history: the model can only
+        # know it if the retrieved memory was injected into its context.
+        check(marker in before["reply"], f"reply uses the injected memory ({marker})")
         recalled = recall_in_container(a_id, question, base)
         check(any(marker in m for m in recalled), f"recall returns the {marker} memory")
 
@@ -248,6 +251,7 @@ def main() -> int:
         after = ask(tok_a, question)
         print(f"  memories_used={after['memories_used']} reply={after['reply'][:140]!r}")
         check(after["memories_used"] >= 1, "memories injected after restart")
+        check(marker in after["reply"], f"reply after restart uses the injected memory ({marker})")
         recalled = recall_in_container(a_id, question, base)
         check(any(marker in m for m in recalled), f"recall still returns {marker} after restart")
 
