@@ -33,7 +33,15 @@ class Services:
             return self._cache[name]
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("chat_model", "memory_model", "embedder", "chroma", "memory", "rag"):
+        if name in (
+            "chat_model",
+            "planner_model",
+            "memory_model",
+            "embedder",
+            "chroma",
+            "memory",
+            "rag",
+        ):
             self._cache[name] = value
         else:
             super().__setattr__(name, value)
@@ -41,6 +49,14 @@ class Services:
     @property
     def chat_model(self):
         return self._get("chat_model", lambda: get_chat_model(chat_model_settings(self.settings)))
+
+    @property
+    def planner_model(self):
+        """The chat model in JSON mode, for structured outputs such as study plans."""
+        return self._get(
+            "planner_model",
+            lambda: get_chat_model(chat_model_settings(self.settings), json_mode=True),
+        )
 
     @property
     def memory_model(self):

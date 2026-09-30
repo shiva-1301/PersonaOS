@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import re
+from datetime import date, timedelta
 from typing import Any
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -18,7 +19,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from app.agent.prompts import MEMORIES_HEADER
+from app.agent.prompts import MEMORIES_HEADER, PLAN_MARKER
 
 _WORD = re.compile(r"[a-z0-9]+")
 _STOPWORDS = frozenset(
@@ -109,6 +110,33 @@ def fake_reply(messages: list[BaseMessage]) -> str:
     return f"ECHO: {last_user} | MEMORIES: {memories} | HISTORY: {history} | SOURCES: {sources}"
 
 
+def fake_plan(prompt: str) -> str:
+    """One 60-minute session per week at 18:00 local, across the requested window."""
+    window = re.search(r"Window: (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})", prompt)
+    now = re.search(r"Now: (\d{4}-\d{2}-\d{2})", prompt)
+    if not window:
+        return json.dumps({"tasks": []})
+    start = max(date.fromisoformat(window.group(1)), date.fromisoformat(now.group(1)))
+    end = date.fromisoformat(window.group(2))
+    tasks, day, n = [], start, 1
+    while day <= end and n <= 12:
+        tasks.append(
+            {
+                "title": f"Session {n}",
+                "notes": "Study and review.",
+                "due_at": f"{day.isoformat()}T18:00",
+                "est_minutes": 60,
+            }
+        )
+        day += timedelta(days=7)
+        n += 1
+    return json.dumps({"tasks": tasks})
+
+
+def _text_of(messages: list[BaseMessage], kind: str) -> str:
+    return "\n".join(_content(m) for m in messages if m.type == kind)
+
+
 class FakeChatModel(BaseChatModel):
     @property
     def _llm_type(self) -> str:
@@ -121,9 +149,33 @@ class FakeChatModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> ChatResult:
-        system = "\n".join(_content(m) for m in messages if m.type == "system")
+        system = _text_of(messages, "system")
         if EXTRACTION_MARKER in system:
-            text = fake_extract("\n".join(_content(m) for m in messages if m.type == "human"))
+            text = fake_extract(_text_of(messages, "human"))
+        elif PLAN_MARKER in system:
+            text = fake_plan(_content(next(m for m in messages if m.type == "human")))
         else:
             text = fake_reply(messages)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])
+
+
+class ScriptedChatModel(BaseChatModel):
+    """Returns preset replies in order (the last one repeats) and records every prompt."""
+
+    replies: list[str]
+    prompts: list[list[BaseMessage]] = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "personaos-scripted"
+
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        self.prompts.append(list(messages))
+        text = self.replies[min(len(self.prompts), len(self.replies)) - 1]
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])

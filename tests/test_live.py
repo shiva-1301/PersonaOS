@@ -74,3 +74,33 @@ def test_remembers_preference_across_sessions(live_client):
     ).json()
     print("B:", other)
     assert other["memories_used"] == 0
+
+
+def test_study_plan_with_real_model(live_client):
+    """Real LLM: remembered evening preference -> dated plan within window and budget."""
+    from datetime import UTC, datetime, timedelta
+
+    a = auth("test-live-a")
+    live_client.patch("/me", json={"timezone": "Asia/Kolkata"}, headers=a)
+    first = live_client.post(
+        "/chat", json={"message": "I'm bad at mornings. I study best after 6 pm."}, headers=a
+    ).json()
+    wait_for_memory(live_client, a, first["session_id"], first["message_id"], timeout=300)
+
+    target = (datetime.now(UTC) + timedelta(days=27)).date()
+    goal = live_client.post(
+        "/goals",
+        json={"title": "Finish the Machine Learning course", "target_date": target.isoformat()},
+        headers=a,
+    ).json()
+    started = time.monotonic()
+    resp = live_client.post(f"/goals/{goal['id']}/plan", json={"hours_per_week": 6}, headers=a)
+    print(f"\nplan took {time.monotonic() - started:.1f}s -> {resp.status_code}")
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    print("preferences:", body["used_preferences"])
+    print("adjustments:", body["adjustments"])
+    for t in body["tasks"]:
+        print(f"  {t['due_at']}  {t['est_minutes']:>3} min  {t['title']}")
+    assert len(body["tasks"]) >= 3
+    assert any("6 pm" in p or "18" in p or "evening" in p for p in body["used_preferences"])

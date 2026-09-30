@@ -217,3 +217,35 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
 - stream replies (optional SSE in Phase 6)
 - a smaller local chat model (e.g. qwen2.5:3b)
 - a Gemini Flash-Lite model for chat (daily quota applies)
+
+## Phase 5: goals, tasks, planner (2026-10-01)
+
+| Decision | Reason |
+|---|---|
+| **No migration needed.** The `goals` and `tasks` tables (including `tasks.est_minutes`) were created in Phase 2. | Planned ahead in Phase 2. |
+| **Another user's IDs return 404**, for every read, update, delete and plan request. Linking a task to another user's goal (on create or update) also returns 404. | Handoff Phase 5 §1: don't leak whether a record exists. |
+| **PATCH semantics:** only fields the client sends are changed (`exclude_unset`). Nullable fields can be cleared with `null`; `title` and `status` can't (422). | Standard partial updates. |
+| **`completed_at`:** set when a task becomes `done`, kept if it's marked done again, cleared when it leaves `done`. Creating a task as `done` also sets it. | Handoff Phase 5 §2. |
+| **Goal progress** = done / total tasks linked to the goal (`ratio`, 4 decimals, 0.0 with no tasks), computed with one grouped SQL aggregate for lists. | Handoff Phase 5 §3, and efficient. |
+| **Deleting a goal keeps its tasks** (`goal_id` becomes NULL, as decided in Phase 2). | Don't silently delete work. |
+| **Times:** stored in UTC. A naive datetime in a request means the user's local time (`users.timezone`), and responses are in UTC. New **`PATCH /me`** sets `display_name` and `timezone` (IANA names only; anything else gets 422). | Handoff §7: store UTC, and use the per-user timezone for "today" and "this week". |
+| **Due filters:** `today` is local midnight to midnight. `this_week` is the **calendar week, Monday 00:00 to next Monday 00:00 local**, including earlier days of the week. `overdue` is `due_at < now` and not done. Undated tasks sort last. | This matches "What are my tasks this week?" in the demo script. |
+| **Planner LLM output:** JSON mode on the chat model (`services.planner_model`: Ollama `format=json`, or the Gemini JSON MIME type), validated with Pydantic (`LLMPlan`: 1–120 sessions, title 1–200 characters, `due_at` a datetime, 10–600 minutes). Code fences and surrounding prose are stripped before validation. | Handoff Phase 5 §4. |
+| **Retries:** up to 3 attempts in total. After an invalid reply, the model receives its own output plus a precise error (e.g. `tasks.0.title: String should have at least 1 character`) and is asked for corrected JSON only. If all 3 fail, the response is **502 `upstream_error`** with "The assistant could not produce a valid study plan after 3 attempts. Please try again." Nothing is saved, and there's never a 500 or stack trace. Rate limits give 503 with `Retry-After`. | Handoff Phase 5 §4 and acceptance. 502 because the fault is the upstream model's output, not the client's request. |
+| **Deterministic post-processing (`normalise_plan`, a pure function):** (1) Each session is moved into [max(start of start_date, now), end of end_date] in the user's timezone, **keeping its local time of day**; past sessions are moved forward. (2) Sessions longer than the weekly budget are shortened to it. (3) Sessions are sorted, and each calendar week (Monday to Sunday, local) is capped at `hours_per_week × 60` minutes; overflow moves to the same weekday and time in a later week, or is dropped if no week before the end has room. (4) Every change is reported in `adjustments`. | Handoff: clamp dates, respect the weekly budget, no past dates, respect the timezone. Moving before dropping preserves as much of the model's plan as possible. |
+| **Window:** `start_date` defaults to today, and a past start becomes today. `end_date` defaults to the goal's `target_date`; if neither is set the response is 422. The end must be today or later, and the window is at most 366 days. | Readable 422s instead of odd plans. |
+| **Preferences:** the planner recalls up to 5 memories for "study schedule preferences, best time of day, <goal>" (scoped to the user) and adds the request's optional `preferences` text. Both go into the prompt and are returned as `used_preferences`. If recall fails, planning continues without them (and it's logged). | Handoff Phase 5 §4. The evening preference then drives session times. |
+| All plan tasks are inserted in **one transaction**, linked to the goal, as `todo`. | Handoff Phase 5 §4. |
+| Plan titles are numbered **by session, not by week**. | In the first live run the model labelled 12 sessions "Week 1…Week 12" even though there were about three per week, copying the prompt's example. |
+| Test helpers: `ScriptedChatModel` (preset replies, records prompts) and a deterministic planner branch in `FakeChatModel` (one 60-minute session per week at 18:00). `PLAN_MARKER` lives in `app/agent/prompts.py`. | Offline and deterministic. `ScriptedChatModel` will also drive the Phase 6 agent scenarios. |
+
+### Verification (Docker, qwen2.5:7b), `scripts/verify_planner_docker.py`: 26/26 checks
+- **Memory:** the preference "I study best after 6 pm" was extracted in 3.1 s. A goal was created ending in 4 weeks, and a plan requested at 6 h/week. The plan took **47.7 s**.
+- **Plan:** 10 × 60-minute sessions, **all at 19:00 Kolkata time**, all between now and the target date. The remembered preference was passed to the planner.
+- **The deterministic rule fired on real output:** the model put 7 hours into one week, so one session was moved to a later week (reported in `adjustments`). The busiest week ended at exactly 360 minutes.
+- **Progress:** 2/10 after marking two tasks done; `completed_at` was set, and cleared when a task went back to `todo`.
+- **Filters:** `?due=this_week` returned exactly the sessions in the current Kolkata calendar week, and nothing was overdue.
+- **B:** 404 on A's goal, task and plan endpoints, and empty lists.
+- **After `docker compose restart api`:** the goal, all tasks and the progress were unchanged.
+
+**Quality note (not a rule violation):** qwen front-loaded the plan (9 sessions in the first 9 days, then 1 more) even though the prompt asks it to spread sessions evenly. The rules only guarantee window, budget and no past dates. If even spacing matters, a later option is to distribute sessions deterministically, e.g. by pinning due dates to evenly spaced slots.

@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 4 (documents and RAG)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 5 (goals, tasks and study plans)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -45,6 +45,8 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 # Full Docker document check on the files in test_files\ (git-ignored): ingest, retrieval,
 # chat citations, user isolation, restart persistence, summary, delete -> 0 vectors
 .venv\Scripts\python.exe scripts\verify_documents_docker.py
+# Goals, tasks and a real study plan: window, weekly budget, preferences, progress, isolation
+.venv\Scripts\python.exe scripts\verify_planner_docker.py
 ```
 
 Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
@@ -64,6 +66,13 @@ Invoke-RestMethod -Method Post http://localhost:8000/chat -Headers @{Authorizati
 curl.exe -H "Authorization: Bearer $t" -F "file=@test_files\ML_Notes_2_Decision_Trees.docx" http://localhost:8000/documents
 curl.exe -H "Authorization: Bearer $t" http://localhost:8000/documents
 curl.exe -H "Authorization: Bearer $t" "http://localhost:8000/documents/search?q=entropy"
+
+# Goals, tasks and study plans (set your timezone first: "today"/"this week" use it)
+$h = @{Authorization="Bearer $t"}
+Invoke-RestMethod -Method Patch http://localhost:8000/me -Headers $h -ContentType application/json -Body '{"timezone":"Asia/Kolkata"}'
+$goal = Invoke-RestMethod -Method Post http://localhost:8000/goals -Headers $h -ContentType application/json -Body '{"title":"Finish ML course","target_date":"2026-11-30"}'
+Invoke-RestMethod -Method Post "http://localhost:8000/goals/$($goal.id)/plan" -Headers $h -ContentType application/json -Body '{"hours_per_week":6}'
+Invoke-RestMethod "http://localhost:8000/tasks?due=this_week" -Headers $h
 ```
 
 Chat answers cite the documents they used in `sources`. Document text is always passed to the model as clearly delimited, untrusted data.

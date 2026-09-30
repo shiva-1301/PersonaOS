@@ -64,8 +64,8 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 | 1 | App scaffold, Docker Compose, config, `/health` | – | Docker Desktop running | ✅ Verified 30 Sep 2026 |
 | 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | ✅ Verified 1 Oct 2026 |
 | 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | ✅ Verified 1 Oct 2026 |
-| 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | 🟨 Built, awaiting your verification |
-| 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ⬜ |
+| 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | ✅ Verified 1 Oct 2026 |
+| 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | 🟨 Built, awaiting your verification |
 | 6 | LangGraph agent with tools | 3, 4, 5 | – | ⬜ |
 | 7 | Memory lifecycle, supersession, privacy endpoints | 3, 6 | `CRON_SECRET` | ⬜ |
 | 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | ⬜ |
@@ -210,7 +210,7 @@ curl.exe -i http://localhost:8000/health
 - `jobs/memory_lifecycle.py` behind `POST /internal/jobs/memory-lifecycle` (`CRON_SECRET`, constant-time compare). It's idempotent and also cleans up orphaned meta rows.
 - `routers/memory.py`: `GET /memory`, `DELETE /memory/{id}`, `GET /memory/health`, and `DELETE /me/data` (with an explicit confirmation field). It must also purge Mem0's SQLite history (`<CHROMA_PATH>/mem0_history.db`: `history` rows by the user's memory IDs, `messages` by `session_scope`) and **all of the user's document chunks in Chroma**, because a Postgres cascade doesn't reach either (see DECISIONS.md, Phases 3 and 4).
 
-**Tests (fake clock):** 60 untouched days leaves the memory archived and out of recall; frequent access slows decay; the reinforcement cap holds; a contradiction supersedes; a wrong cron secret gets 401 or 403; `DELETE /me/data` leaves zero rows or vectors for the user and leaves other users untouched.
+**Tests (fake clock):** 60 untouched days leaves the memory archived and out of recall; frequent access slows decay; the reinforcement cap holds; a contradiction supersedes; a wrong cron secret gets 401 or 403; `DELETE /me/data` leaves zero rows or vectors for the user and leaves other users untouched. It must explicitly assert all of these are zero for the deleted user: Postgres rows, Mem0 vectors, **Chroma document chunks** (by `user_id`), and **Mem0 SQLite `history` and `messages` rows**. The Docker script is extended to check the same inside the container.
 
 **Commit:** `phase-7: memory lifecycle, supersession, privacy endpoints`
 
