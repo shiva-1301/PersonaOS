@@ -1,0 +1,22 @@
+# Environment and local state
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local data
+chroma_data/
+
+# Credentials and service-account files
+*.pem
+**/*service-account*.json
+**/*service_account*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tooling
+.vscode/
