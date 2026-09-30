@@ -1,0 +1,1314 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}</style><style>:root{color-scheme:light dark;--md-bg:#fff;--md-text:rgba(0,0,0,.8);--md-muted:rgba(0,0,0,.6);--md-fill:rgba(0,0,0,.04);--md-fill-strong:rgba(0,0,0,.06);--md-rule:rgba(0,0,0,.1);--md-rule-strong:rgba(0,0,0,.16);--md-link:hsl(210 100% 45%)}@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){--md-bg:#0d0d0d;--md-text:rgba(255,255,255,.85);--md-muted:rgba(255,255,255,.6);--md-fill:rgba(255,255,255,.06);--md-fill-strong:rgba(255,255,255,.09);--md-rule:rgba(255,255,255,.14);--md-rule-strong:rgba(255,255,255,.22);--md-link:hsl(210 100% 72%)}}:root[data-theme="dark"]{color-scheme:dark;--md-bg:#0d0d0d;--md-text:rgba(255,255,255,.85);--md-muted:rgba(255,255,255,.6);--md-fill:rgba(255,255,255,.06);--md-fill-strong:rgba(255,255,255,.09);--md-rule:rgba(255,255,255,.14);--md-rule-strong:rgba(255,255,255,.22);--md-link:hsl(210 100% 72%)}:root[data-theme="light"]{color-scheme:light}@media print{:root,:root[data-theme="dark"]{color-scheme:light;--md-bg:#fff;--md-text:rgba(0,0,0,.8);--md-muted:rgba(0,0,0,.6);--md-fill:rgba(0,0,0,.04);--md-fill-strong:rgba(0,0,0,.06);--md-rule:rgba(0,0,0,.1);--md-rule-strong:rgba(0,0,0,.16);--md-link:hsl(210 100% 45%)}}body{background:var(--md-bg);color:var(--md-text);max-width:720px;margin:0 auto;padding:32px;display:flex;flex-direction:column;gap:10px;font:14px/1.55 -apple-system,BlinkMacSystemFont,'SF Pro','Segoe UI',sans-serif;overflow-wrap:break-word}body>:first-child{margin-top:0}h1,h2,h3,h4,h5,h6{margin:6px 0 0;line-height:1.25;font-weight:600;text-wrap:balance}h1{font-size:1.35em}h2{font-size:1.15em;color:var(--md-muted)}h3,h4,h5,h6{font-size:1em}p,ul,ol,blockquote,table,pre,hr{margin:0}strong{font-weight:600}a{color:var(--md-link);text-decoration:none}a:hover{text-decoration:underline}ul,ol{display:flex;flex-direction:column;gap:6px;padding-left:22px}ul{list-style:disc}ol{list-style:decimal}:is(li,td,th)>*+:is(p,ul,ol,blockquote){margin-top:6px}blockquote{display:flex;flex-direction:column;gap:10px;border-left:2px solid var(--md-rule);padding-left:10px;color:var(--md-muted)}:not(pre)>code{background:var(--md-fill);padding:1px 3px;border-radius:4px;font:.92em 'SF Mono',ui-monospace,Menlo,Consolas,monospace}a>code{background:none;color:inherit}pre{background:var(--md-fill);padding:10px 12px;border-radius:6px;overflow-x:auto;font:12px/1.5 'SF Mono',ui-monospace,Menlo,Consolas,monospace;margin-block:4px}pre code{background:none;padding:0;font:inherit}table{width:100%;border-collapse:separate;border-spacing:2px;font:inherit}th,td{padding:6px 8px;border-radius:3px;text-align:left;vertical-align:top}th{background:var(--md-fill-strong);font-weight:600}td{background:var(--md-fill)}:is(th,td) :not(pre)>code{background:transparent}hr{border:0;border-top:1px solid var(--md-rule-strong);margin-block:10px}img{max-width:100%;height:auto;border-radius:4px}</style>
+</head><body>
+<h1>PersonaOS: Project Implementation Document</h1>
+<p><strong>One Identity. One Memory. Infinite Intelligence.</strong></p>
+<p><em>Version 1.0 · 30 Sep 2026 · Built from the PersonaOS Abstract, Build Spec, Budget Estimate and design guide, extended with Gmail, Google Calendar and Google Drive integration.</em></p>
+<hr>
+<h2>1. Project overview</h2>
+<h3>1.1 Purpose</h3>
+<p>PersonaOS is a personalized AI life-management assistant, not a plain chatbot. It remembers each user over time, knows their documents, tracks goals and tasks, and acts on their behalf (planning, scheduling, summarizing, emailing) through agentic tool use.</p>
+<h3>1.2 Objectives</h3>
+<ol>
+<li>Give each user a persistent, private memory of their preferences and goals.</li>
+<li>Let users upload or connect documents and query them with RAG.</li>
+<li>Track goals, tasks and progress, and show productivity analytics.</li>
+<li>Act through tools: study plans, calendar events, Drive imports, Gmail search and drafts.</li>
+<li>Manage memory responsibly: lifecycle (forgetting, supersession), user visibility and deletion.</li>
+<li>Deploy as a secure, cloud-hosted web application.</li>
+</ol>
+<h3>1.3 Alignment</h3>
+<p>SDG 3 (Well-being), SDG 4 (Quality Education), SDG 8 (Decent Work and Economic Growth): lifelong learning, productivity and personalized assistance.</p>
+<h3>1.4 Scope</h3>
+<table>
+<thead>
+<tr>
+<th>In scope (v1)</th>
+<th>Out of scope (v1)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Auth, chat with memory, document RAG, goals/tasks, planner, analytics dashboard, memory lifecycle, Google Calendar / Drive / Gmail connectors (Testing mode), Docker deployment</td>
+<td>Native mobile apps, public Gmail-read launch (needs CASA review), knowledge graph (optional Phase 10), multi-language UI</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>2. System architecture</h2>
+<h3>2.1 Layered view</h3>
+<pre class="mermaid">flowchart TB
+  UI[&#34;Frontend: Streamlit prototype, React/Next.js later&lt;br/&gt;Chat | Documents | Goals &amp; Tasks | Dashboard | Memory | Integrations&#34;]
+  API[&#34;FastAPI backend&lt;br/&gt;auth middleware, routers, services&#34;]
+  AGENT[&#34;LangGraph agent (the brain)&lt;br/&gt;load_context, agent, tools, save_memory&#34;]
+  JOBS[&#34;Background jobs&lt;br/&gt;ingestion, nightly memory lifecycle, Google sync&#34;]
+  MEM[&#34;Memory service&lt;br/&gt;Mem0 + lifecycle layer&#34;]
+  RAG[&#34;RAG service&lt;br/&gt;ChromaDB&#34;]
+  TOOLS[&#34;Tools&lt;br/&gt;goals, tasks, planner, calendar, drive, gmail&#34;]
+  LLM[&#34;LLM + embeddings&lt;br/&gt;Ollama or OpenAI-compatible / Gemini&#34;]
+  PG[(&#34;PostgreSQL&lt;br/&gt;users, goals, tasks, documents,&lt;br/&gt;sessions, memory_meta, google_tokens&#34;)]
+  CH[(&#34;ChromaDB&lt;br/&gt;Mem0 collection + documents collection&#34;)]
+  GOOG[&#34;Google APIs&lt;br/&gt;Calendar, Drive, Gmail (OAuth 2.0)&#34;]
+  AUTH[&#34;Firebase Auth / Auth0&#34;]
+
+  UI --&gt;|HTTPS + JWT| API
+  API --&gt; AGENT
+  API --&gt; JOBS
+  API --- AUTH
+  AGENT --&gt; MEM
+  AGENT --&gt; RAG
+  AGENT --&gt; TOOLS
+  AGENT --&gt; LLM
+  MEM --&gt; CH
+  MEM --&gt; PG
+  RAG --&gt; CH
+  TOOLS --&gt; PG
+  TOOLS --&gt; GOOG
+  JOBS --&gt; PG
+  JOBS --&gt; CH
+</pre>
+<h3>2.2 Responsibility split (do not blur)</h3>
+<table>
+<thead>
+<tr>
+<th>Store / component</th>
+<th>Holds</th>
+<th>Query style</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Mem0</strong></td>
+<td>Learned facts and preferences about the user</td>
+<td>Semantic search by <code>user_id</code></td>
+</tr>
+<tr>
+<td><strong>ChromaDB (documents collection)</strong></td>
+<td>Chunks from uploads, Drive imports and selected emails</td>
+<td>Semantic search filtered by <code>user_id</code></td>
+</tr>
+<tr>
+<td><strong>ChromaDB (Mem0 collection)</strong></td>
+<td>Mem0's internal embeddings</td>
+<td>Managed by Mem0</td>
+</tr>
+<tr>
+<td><strong>PostgreSQL</strong></td>
+<td>Users, goals, tasks, documents, sessions, memory lifecycle metadata, encrypted Google tokens</td>
+<td>SQL</td>
+</tr>
+<tr>
+<td><strong>Google APIs</strong></td>
+<td>The user's live calendar, Drive files, mailbox</td>
+<td>REST via OAuth token</td>
+</tr>
+</tbody>
+</table>
+<p>Rule of thumb: fuzzy and learned → Mem0. Text from files → ChromaDB. Exact and countable → PostgreSQL. Live external data → Google APIs, imported into the above when it needs to be searched.</p>
+<h3>2.3 Technology stack</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Choice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Language</td>
+<td>Python 3.12+</td>
+</tr>
+<tr>
+<td>API</td>
+<td>FastAPI + Uvicorn</td>
+</tr>
+<tr>
+<td>Relational DB</td>
+<td>PostgreSQL, SQLAlchemy 2.x, Alembic</td>
+</tr>
+<tr>
+<td>Vector DB</td>
+<td>ChromaDB (persistent client)</td>
+</tr>
+<tr>
+<td>User memory</td>
+<td>Mem0 (<code>mem0ai</code>)</td>
+</tr>
+<tr>
+<td>Agent</td>
+<td>LangGraph + LangChain tool bindings</td>
+</tr>
+<tr>
+<td>LLM</td>
+<td>Configurable: Ollama (Llama 3 / Mistral / Gemma) or OpenAI-compatible or Gemini API, swappable by env only</td>
+</tr>
+<tr>
+<td>Embeddings</td>
+<td>Configurable: local (sentence-transformers / Ollama) or API</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>Firebase Auth or Auth0 (JWT verified in FastAPI)</td>
+</tr>
+<tr>
+<td>Google integration</td>
+<td><code>google-auth</code>, <code>google-auth-oauthlib</code>, <code>google-api-python-client</code></td>
+</tr>
+<tr>
+<td>Encryption</td>
+<td><code>cryptography</code> (Fernet) for stored refresh tokens</td>
+</tr>
+<tr>
+<td>Frontend</td>
+<td>Streamlit prototype; React/Next.js later</td>
+</tr>
+<tr>
+<td>Deploy</td>
+<td>Docker + docker-compose; Render (or Railway)</td>
+</tr>
+<tr>
+<td>CI / tests</td>
+<td>GitHub Actions, pytest, httpx</td>
+</tr>
+</tbody>
+</table>
+<p>Verify all library APIs against current official documentation before coding.</p>
+<h3>2.4 Agent design (LangGraph)</h3>
+<pre><code>START → load_context → agent ⇄ tools → save_memory → END
+</code></pre>
+<ul>
+<li><strong>load_context:</strong> recall memories (<code>recall(user_id, message)</code>), load last N chat messages.</li>
+<li><strong>agent:</strong> LLM call with system prompt, memories, history and tools bound. Tool calls go to <code>tools</code>; otherwise to <code>save_memory</code>.</li>
+<li><strong>tools:</strong> execute tool calls, return to <code>agent</code>. <strong>Hard cap: 5 iterations per turn.</strong></li>
+<li><strong>save_memory:</strong> <code>save_turn</code> to Mem0, update <code>memory_meta</code>, persist chat messages.</li>
+</ul>
+<p>Tool rules: <code>user_id</code> always comes from the verified token in agent state, never from LLM arguments. Text retrieved from documents or emails is <strong>data, not instructions</strong> (prompt-injection defence).</p>
+<h3>2.5 Google integration design</h3>
+<pre><code>User clicks &#34;Connect Google&#34; (Streamlit)
+  → GET /integrations/google/start?scopes=calendar,drive,gmail
+  → redirect to Google consent (access_type=offline, state=signed nonce)
+  → Google redirects to /integrations/google/callback?code=...
+  → backend exchanges code, encrypts refresh token (Fernet), stores in google_tokens
+  → tools load token per user_id, refresh access token, call the API
+</code></pre>
+<p>Rules:</p>
+<ul>
+<li>Firebase login identifies the user; Google OAuth is a <strong>separate consent</strong> granting data access.</li>
+<li>Request <strong>incremental scopes</strong> (Calendar first, then Drive, then Gmail) so users grant only what they use.</li>
+<li>Imported Drive files and emails go through the normal ingestion pipeline (chunk, embed, Chroma with <code>user_id</code>), so RAG and Mem0 need no special path.</li>
+<li>Fetch the minimum: a specific file or the last N emails, never a whole mailbox.</li>
+<li>Disconnect revokes the token at Google, deletes the stored token, and optionally purges imported chunks.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Scope</th>
+<th>Google tier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Calendar read/create</td>
+<td><code>calendar.events</code></td>
+<td>Sensitive</td>
+</tr>
+<tr>
+<td>Drive (picked or app-created files)</td>
+<td><code>drive.file</code></td>
+<td>Non-sensitive</td>
+</tr>
+<tr>
+<td>Drive (read all)</td>
+<td><code>drive.readonly</code></td>
+<td>Restricted</td>
+</tr>
+<tr>
+<td>Gmail read/search</td>
+<td><code>gmail.readonly</code></td>
+<td>Restricted</td>
+</tr>
+<tr>
+<td>Gmail send / drafts</td>
+<td><code>gmail.send</code>, <code>gmail.compose</code></td>
+<td>Sensitive</td>
+</tr>
+</tbody>
+</table>
+<p>Deployment mode: <strong>Testing</strong> publishing status (up to 100 test users, &quot;unverified app&quot; warning, 7-day refresh-token expiry for restricted scopes). Public launch path is in Section 12.</p>
+<hr>
+<h2>3. Functional requirements</h2>
+<p>Priority: <strong>M</strong> = must (project deliverable), <strong>S</strong> = should, <strong>C</strong> = could (stretch).</p>
+<h3>3.1 Authentication and accounts (FR-AUTH)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-AUTH-1</td>
+<td>Users register and log in via Firebase/Auth0 (email and Google sign-in; no SMS)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-AUTH-2</td>
+<td>Backend verifies JWT signature, issuer, audience and expiry on every request</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-AUTH-3</td>
+<td>First valid login creates a <code>users</code> row; later logins reuse it</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-AUTH-4</td>
+<td><code>GET /me</code> returns the current profile</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-AUTH-5</td>
+<td>Users can delete their account and all data (<code>DELETE /me/data</code>)</td>
+<td>M</td>
+</tr>
+</tbody>
+</table>
+<h3>3.2 Conversational AI with memory (FR-CHAT)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-CHAT-1</td>
+<td>Users chat in sessions; history is stored and listable</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CHAT-2</td>
+<td>Before each reply, relevant memories are recalled and injected</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CHAT-3</td>
+<td>After each turn, durable facts are extracted and saved to Mem0</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CHAT-4</td>
+<td>A preference stated in one session is honoured in a new session</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CHAT-5</td>
+<td>Current user message overrides an outdated memory</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CHAT-6</td>
+<td>&quot;Remember that…&quot; saves an explicit fact</td>
+<td>S</td>
+</tr>
+<tr>
+<td>FR-CHAT-7</td>
+<td>Streaming replies (SSE)</td>
+<td>S</td>
+</tr>
+</tbody>
+</table>
+<h3>3.3 Long-term memory and lifecycle (FR-MEM)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-MEM-1</td>
+<td>Each Mem0 memory has a <code>memory_meta</code> row (state, strength, access count, last access, source)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-MEM-2</td>
+<td>Recall ranks by <code>relevance × strength</code>, excludes archived and superseded</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-MEM-3</td>
+<td>Recall reinforces used memories (<code>strength += 0.1</code>, capped at 1.0)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-MEM-4</td>
+<td>Nightly job decays strength and moves memories Active → Stale (&lt;0.5) → Archived (&lt;0.15)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-MEM-5</td>
+<td>A contradicting new fact marks the old memory Superseded and links it</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-MEM-6</td>
+<td>Users can list memories with state, delete one, or delete all</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-MEM-7</td>
+<td><code>GET /memory/health</code> shows counts by state and 7-day growth</td>
+<td>S</td>
+</tr>
+</tbody>
+</table>
+<h3>3.4 Documents and RAG (FR-DOC)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-DOC-1</td>
+<td>Upload PDF, DOCX, TXT; reject other types and oversized files</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DOC-2</td>
+<td>Ingest asynchronously: parse, chunk (~800 tokens, 100 overlap), embed, store with <code>user_id</code> metadata; status processing → ready/failed</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DOC-3</td>
+<td>Retrieval always filters by <code>user_id</code></td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DOC-4</td>
+<td>Summarize a document (map-reduce) and store the summary</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DOC-5</td>
+<td>List, view and delete documents; deletion removes vectors</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DOC-6</td>
+<td>Answers cite source filename/chunk</td>
+<td>S</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5 Goals, tasks and planning (FR-GOAL)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-GOAL-1</td>
+<td>CRUD for goals (title, description, target date, status)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-GOAL-2</td>
+<td>CRUD for tasks (title, notes, due date, status, optional goal)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-GOAL-3</td>
+<td>Goal progress = done tasks / total tasks</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-GOAL-4</td>
+<td>Generate a study plan from a goal, hours per week and date range; LLM output validated as JSON with retry</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-GOAL-5</td>
+<td>Agent can create goals, add/update tasks and list upcoming/overdue tasks from chat</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-GOAL-6</td>
+<td>Personalization: plans respect remembered preferences (e.g. &quot;studies after 6 pm&quot;)</td>
+<td>M</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5.1 Google Calendar (FR-CAL)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-CAL-1</td>
+<td>Connect Google Calendar via OAuth (<code>calendar.events</code>)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CAL-2</td>
+<td>Agent can list events in a date range</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CAL-3</td>
+<td>Agent can create events (title, start, end) and optionally push plan sessions as events</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-CAL-4</td>
+<td>Check for conflicts before scheduling and ask before double-booking</td>
+<td>S</td>
+</tr>
+<tr>
+<td>FR-CAL-5</td>
+<td>Reminders for tasks due soon (in-app; email optional)</td>
+<td>S</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5.2 Google Drive (FR-DRV)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-DRV-1</td>
+<td>Connect Drive via OAuth with <code>drive.file</code> by default</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DRV-2</td>
+<td>User picks files (Drive Picker or file ID/link) to import; supported: Docs (export to text/PDF), PDF, DOCX, TXT</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DRV-3</td>
+<td>Imported files enter the RAG ingestion pipeline and appear in Documents with <code>source=drive</code></td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DRV-4</td>
+<td>Agent can list and search the user's Drive files (<code>drive.readonly</code>, test users only)</td>
+<td>C</td>
+</tr>
+<tr>
+<td>FR-DRV-5</td>
+<td>Re-sync an imported file on request</td>
+<td>C</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5.3 Gmail (FR-GML)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-GML-1</td>
+<td>Connect Gmail via OAuth; scopes requested incrementally</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-GML-2</td>
+<td>Agent can search emails and read a specific message (<code>gmail.readonly</code>, capped at N results)</td>
+<td>S</td>
+</tr>
+<tr>
+<td>FR-GML-3</td>
+<td>Agent can summarize an email or thread</td>
+<td>S</td>
+</tr>
+<tr>
+<td>FR-GML-4</td>
+<td>Agent can <strong>draft</strong> a reply; sending requires explicit user confirmation in the UI</td>
+<td>S</td>
+</tr>
+<tr>
+<td>FR-GML-5</td>
+<td>Extract dates/deadlines from emails and offer to create tasks or events</td>
+<td>C</td>
+</tr>
+<tr>
+<td>FR-GML-6</td>
+<td>Email content is never stored permanently unless the user chooses &quot;save to knowledge base&quot;</td>
+<td>M</td>
+</tr>
+</tbody>
+</table>
+<h3>3.5.4 Integration management (FR-INT)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-INT-1</td>
+<td>Integrations page shows connected/disconnected status and granted scopes per service</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-INT-2</td>
+<td>Disconnect revokes the token at Google and deletes the stored token</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-INT-3</td>
+<td>Expired/revoked token shows a clear &quot;Reconnect&quot; prompt instead of an error</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-INT-4</td>
+<td>Every write action (create event, send email) is confirmed by the user or clearly reported</td>
+<td>M</td>
+</tr>
+</tbody>
+</table>
+<h3>3.6 Analytics and dashboard (FR-DASH)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-DASH-1</td>
+<td><code>GET /analytics/summary</code>: tasks completed per day/week, goal progress, overdue count, streak</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DASH-2</td>
+<td>Dashboard charts for the above</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DASH-3</td>
+<td>Memory page: view, delete, see state</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-DASH-4</td>
+<td>Upcoming events panel from Calendar</td>
+<td>S</td>
+</tr>
+</tbody>
+</table>
+<h3>3.7 Privacy and administration (FR-PRIV)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Pri</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FR-PRIV-1</td>
+<td>Every data access is scoped by <code>user_id</code> (SQL, Chroma metadata, Mem0)</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-PRIV-2</td>
+<td><code>DELETE /me/data</code> removes Mem0, Chroma vectors, Postgres rows and Google tokens</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-PRIV-3</td>
+<td><code>docs/PRIVACY.md</code> states what is stored and how to delete it</td>
+<td>M</td>
+</tr>
+<tr>
+<td>FR-PRIV-4</td>
+<td>Google data is used only for user-facing features, not for training models</td>
+<td>M</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>4. Non-functional requirements</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Category</th>
+<th>Requirement</th>
+<th>How verified</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NFR-1</td>
+<td>Security</td>
+<td>HTTPS only in production; CORS locked to the frontend origin</td>
+<td>Deployment check</td>
+</tr>
+<tr>
+<td>NFR-2</td>
+<td>Security</td>
+<td>Secrets in env vars only; refresh tokens encrypted at rest</td>
+<td>Code review, test</td>
+</tr>
+<tr>
+<td>NFR-3</td>
+<td>Privacy</td>
+<td>Two-user isolation for memory, documents, goals, tasks, Google data</td>
+<td>Isolation tests</td>
+</tr>
+<tr>
+<td>NFR-4</td>
+<td>Performance</td>
+<td>Chat reply begins within ~5 s (cloud LLM); document ingestion is async</td>
+<td>Manual timing</td>
+</tr>
+<tr>
+<td>NFR-5</td>
+<td>Scalability</td>
+<td>Stateless API; state in Postgres/Chroma volumes; horizontally scalable later</td>
+<td>Design review</td>
+</tr>
+<tr>
+<td>NFR-6</td>
+<td>Availability</td>
+<td>Always-on paid host tier for demo; health endpoint</td>
+<td><code>/health</code></td>
+</tr>
+<tr>
+<td>NFR-7</td>
+<td>Modularity</td>
+<td>Providers (LLM, embeddings, auth) swappable by config</td>
+<td>Config test</td>
+</tr>
+<tr>
+<td>NFR-8</td>
+<td>Responsiveness</td>
+<td>Web UI usable on desktop and mobile widths</td>
+<td>Manual check</td>
+</tr>
+<tr>
+<td>NFR-9</td>
+<td>Cost control</td>
+<td>Spend limits on keys; per-user daily token cap; 5-iteration agent cap; file-size limit</td>
+<td>Config + test</td>
+</tr>
+<tr>
+<td>NFR-10</td>
+<td>Maintainability</td>
+<td>Small modules, tests in CI, <code>docs/DECISIONS.md</code></td>
+<td>CI green</td>
+</tr>
+<tr>
+<td>NFR-11</td>
+<td>Observability</td>
+<td>Structured logs; per-turn tool-call log (name, duration, success)</td>
+<td>Log review</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>5. Data model (PostgreSQL)</h2>
+<pre><code>users              id (uuid pk), auth_uid (unique), email, display_name, created_at
+chat_sessions      id, user_id (fk), title, created_at
+chat_messages      id, session_id (fk), role, content, created_at
+goals              id, user_id, title, description, target_date,
+                   status (active|completed|paused), created_at
+tasks              id, user_id, goal_id (nullable fk), title, notes, due_at,
+                   status (todo|doing|done), completed_at, created_at
+documents          id, user_id, filename, mime_type, source (upload|drive|gmail),
+                   external_id (nullable), status (processing|ready|failed),
+                   summary, chunk_count, created_at
+memory_meta        mem0_id (pk), user_id, state (active|stale|archived|superseded),
+                   strength (float), access_count, last_accessed_at,
+                   superseded_by (nullable), source (chat|document|manual), created_at
+google_tokens      user_id (pk), encrypted_refresh_token, granted_scopes (text[]),
+                   status (connected|revoked|expired), updated_at
+tool_call_log      id, user_id, session_id, tool_name, duration_ms, success, created_at
+</code></pre>
+<p>Indexes: <code>user_id</code> on every table; <code>(user_id, status)</code> on tasks and goals; <code>(user_id, source)</code> on documents.</p>
+<hr>
+<h2>6. API design</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Endpoints</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Health/Auth</td>
+<td><code>GET /health</code>, <code>GET /me</code>, <code>DELETE /me/data</code></td>
+</tr>
+<tr>
+<td>Chat</td>
+<td><code>POST /chat</code>, <code>POST /chat/stream</code>, <code>GET /chat/sessions</code>, <code>GET /chat/sessions/{id}</code></td>
+</tr>
+<tr>
+<td>Documents</td>
+<td><code>POST /documents</code>, <code>GET /documents</code>, <code>GET /documents/{id}</code>, <code>DELETE /documents/{id}</code>, <code>POST /documents/{id}/summarize</code></td>
+</tr>
+<tr>
+<td>Goals</td>
+<td><code>POST/GET /goals</code>, <code>GET/PATCH/DELETE /goals/{id}</code>, <code>POST /goals/{id}/plan</code></td>
+</tr>
+<tr>
+<td>Tasks</td>
+<td><code>POST/GET /tasks</code>, <code>GET/PATCH/DELETE /tasks/{id}</code></td>
+</tr>
+<tr>
+<td>Memory</td>
+<td><code>GET /memory</code>, <code>DELETE /memory/{id}</code>, <code>GET /memory/health</code></td>
+</tr>
+<tr>
+<td>Analytics</td>
+<td><code>GET /analytics/summary</code></td>
+</tr>
+<tr>
+<td>Integrations</td>
+<td><code>GET /integrations</code>, <code>GET /integrations/google/start</code>, <code>GET /integrations/google/callback</code>, <code>DELETE /integrations/google</code></td>
+</tr>
+<tr>
+<td>Calendar</td>
+<td><code>GET /calendar/events</code>, <code>POST /calendar/events</code></td>
+</tr>
+<tr>
+<td>Drive</td>
+<td><code>GET /drive/files</code>, <code>POST /drive/import</code></td>
+</tr>
+<tr>
+<td>Gmail</td>
+<td><code>GET /gmail/search</code>, <code>GET /gmail/messages/{id}</code>, <code>POST /gmail/drafts</code>, <code>POST /gmail/send</code> (confirmed)</td>
+</tr>
+</tbody>
+</table>
+<p>All routes except <code>/health</code> and the OAuth callback require a valid JWT.</p>
+<h3>6.1 Agent tools</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+<th>Google</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>search_documents(query)</code></td>
+<td>RAG over the user's chunks</td>
+<td></td>
+</tr>
+<tr>
+<td><code>summarize_document(document_id)</code></td>
+<td>Summary from stored chunks</td>
+<td></td>
+</tr>
+<tr>
+<td><code>create_goal</code>, <code>list_goals</code></td>
+<td>Goals</td>
+<td></td>
+</tr>
+<tr>
+<td><code>add_task</code>, <code>update_task</code>, <code>list_tasks</code></td>
+<td>Tasks</td>
+<td></td>
+</tr>
+<tr>
+<td><code>generate_study_plan(goal_id, hours_per_week, start, end)</code></td>
+<td>Dated tasks</td>
+<td></td>
+</tr>
+<tr>
+<td><code>remember_explicit(fact)</code></td>
+<td>Save a fact to Mem0</td>
+<td></td>
+</tr>
+<tr>
+<td><code>list_calendar_events(start, end)</code></td>
+<td>Read calendar</td>
+<td>Calendar</td>
+</tr>
+<tr>
+<td><code>create_calendar_event(title, start, end)</code></td>
+<td>Write calendar</td>
+<td>Calendar</td>
+</tr>
+<tr>
+<td><code>list_drive_files(query)</code></td>
+<td>Find files</td>
+<td>Drive</td>
+</tr>
+<tr>
+<td><code>import_drive_file(file_id)</code></td>
+<td>Import into RAG</td>
+<td>Drive</td>
+</tr>
+<tr>
+<td><code>search_gmail(query, max_results)</code></td>
+<td>Find emails</td>
+<td>Gmail</td>
+</tr>
+<tr>
+<td><code>read_email(message_id)</code></td>
+<td>Read one message</td>
+<td>Gmail</td>
+</tr>
+<tr>
+<td><code>draft_email(to, subject, body)</code></td>
+<td>Create a draft</td>
+<td>Gmail</td>
+</tr>
+</tbody>
+</table>
+<p>If a Google tool is called for a user who hasn't connected the service, it returns a structured &quot;not connected&quot; result and the agent tells the user how to connect.</p>
+<hr>
+<h2>7. Memory lifecycle specification</h2>
+<p><strong>Write:</strong> <code>mem0.add(messages, user_id)</code>; upsert <code>memory_meta(state=active, strength=1.0, access_count=0)</code>.</p>
+<p><strong>Read:</strong> <code>mem0.search(query, user_id, limit=k*3)</code> → join <code>memory_meta</code> → drop archived/superseded → <code>score = relevance × strength</code> → top k → reinforce (<code>access_count += 1</code>, <code>last_accessed_at = now</code>, <code>strength = min(1, strength + 0.1)</code>).</p>
+<p><strong>Decay (nightly):</strong> <code>strength = exp(-days_since_last_access / S)</code>, <code>S = base_days × (1 + 0.5 × access_count)</code>, <code>base_days ≈ 14</code>. <code>&lt; 0.5</code> → stale; <code>&lt; 0.15</code> → archived (kept, but excluded from recall).</p>
+<p><strong>Supersession:</strong> on Mem0 update/contradiction (or LLM conflict check), old row → <code>superseded</code>, <code>superseded_by = new id</code>.</p>
+<p><strong>Tests:</strong> fake clock; 60 simulated idle days moves a memory to stale/archived; contradiction supersedes.</p>
+<hr>
+<h2>8. Repository layout</h2>
+<pre><code>personaos/
+├── app/
+│   ├── main.py  config.py  deps.py
+│   ├── auth/jwt_verify.py
+│   ├── db/            models.py  session.py  migrations/
+│   ├── schemas/
+│   ├── routers/       chat  documents  goals  tasks  memory  analytics
+│   │                  integrations  calendar  drive  gmail
+│   ├── services/      llm  memory_service  rag_service  doc_parser
+│   │                  planner_service  crypto  google_auth
+│   │                  calendar_service  drive_service  gmail_service
+│   ├── agent/         graph  state  prompts  tools
+│   └── jobs/          memory_lifecycle.py
+├── frontend/streamlit_app.py
+├── tests/  docs/  docker-compose.yml  Dockerfile
+├── .env.example  requirements.txt  README.md
+</code></pre>
+<hr>
+<h2>9. Implementation plan</h2>
+<p>Work phase by phase; each phase ends with acceptance checks, tests and a Git commit <code>phase-N: &lt;summary&gt;</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Deliverable</th>
+<th>Acceptance check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0 Setup</strong></td>
+<td>Repo, config, docker-compose, <code>/health</code></td>
+<td><code>docker compose up</code> works; <code>/health</code> 200</td>
+</tr>
+<tr>
+<td><strong>1 DB + Auth</strong></td>
+<td>Models, migrations, JWT verify, <code>/me</code></td>
+<td>No token → 401; two tokens → two users</td>
+</tr>
+<tr>
+<td><strong>2 Chat + Mem0</strong></td>
+<td>LLM factory, memory service, <code>/chat</code>, sessions</td>
+<td>Preference recalled in a new session; user B never sees user A's memory</td>
+</tr>
+<tr>
+<td><strong>3 Documents + RAG</strong></td>
+<td>Parsers, chunking, ingestion, retrieval, summarize</td>
+<td>Upload → ready → correct chunks; isolation; delete removes vectors</td>
+</tr>
+<tr>
+<td><strong>4 Goals + tasks</strong></td>
+<td>CRUD, progress, planner</td>
+<td>Plan creates valid dated tasks; bad JSON retried</td>
+</tr>
+<tr>
+<td><strong>5 Agent</strong></td>
+<td>Tools + LangGraph, tool-call logging</td>
+<td>Scripted scenarios pass; 5-iteration cap holds</td>
+</tr>
+<tr>
+<td><strong>6 Memory lifecycle</strong></td>
+<td>Decay, states, supersession, memory endpoints</td>
+<td>60-day idle memory archived; contradiction supersedes; delete-all works</td>
+</tr>
+<tr>
+<td><strong>7 Google OAuth + Calendar</strong></td>
+<td>OAuth flow, token encryption, calendar tools</td>
+<td>Event from chat appears in Google Calendar; disconnect removes token</td>
+</tr>
+<tr>
+<td><strong>8 Drive + Gmail</strong></td>
+<td>Drive import to RAG, Gmail search/read/draft</td>
+<td>Drive file answers questions via RAG; draft created; send needs confirmation</td>
+</tr>
+<tr>
+<td><strong>9 Analytics + dashboard</strong></td>
+<td>Summary endpoint, Streamlit pages incl. Integrations</td>
+<td>New user can do the full flow via UI</td>
+</tr>
+<tr>
+<td><strong>10 Hardening + deploy</strong></td>
+<td>CORS, rate limits, Docker, Render, CI, docs</td>
+<td>HTTPS URL works; fresh clone runs; CI green</td>
+</tr>
+<tr>
+<td><strong>11 Optional</strong></td>
+<td>Knowledge graph (Graphiti/Cognee) behind a flag</td>
+<td>Removable without touching other code</td>
+</tr>
+</tbody>
+</table>
+<h3>Phase 7-8 detail (Google integration)</h3>
+<ol>
+<li>Create Google Cloud project; enable Calendar, Drive, Gmail APIs.</li>
+<li>OAuth consent screen: External, <strong>Testing</strong>, add test users; create Web OAuth client; register redirect URIs for local and Render (exact match, <code>http</code> vs <code>https</code>).</li>
+<li>Implement <code>google_auth.py</code>: build consent URL (<code>access_type=offline</code>, signed <code>state</code>), exchange code, encrypt and store refresh token, load and refresh per user, handle revoked/expired tokens.</li>
+<li>Implement <code>calendar_service.py</code>, then <code>drive_service.py</code>, then <code>gmail_service.py</code>; wrap each as tools taking <code>user_id</code> from state.</li>
+<li>Reuse the ingestion pipeline for Drive files and saved emails.</li>
+<li>Add the Integrations page and a &quot;Reconnect&quot; flow.</li>
+<li>Mock Google services in CI with recorded fixtures; never call live Google in tests.</li>
+</ol>
+<hr>
+<h2>10. Security and privacy checklist</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Every query filters by <code>user_id</code> (SQL, Chroma metadata, Mem0)</li>
+<li><input disabled="" type="checkbox"> Tool <code>user_id</code> comes from the verified token, never LLM output</li>
+<li><input disabled="" type="checkbox"> Upload allowlist, size limit, safe parsing, no execution of content</li>
+<li><input disabled="" type="checkbox"> Retrieved document/email text treated as data, not instructions</li>
+<li><input disabled="" type="checkbox"> Secrets in env vars; Google refresh tokens encrypted (Fernet key in env)</li>
+<li><input disabled="" type="checkbox"> OAuth <code>state</code> parameter validated; redirect URIs exact</li>
+<li><input disabled="" type="checkbox"> Minimum Google scopes; incremental consent</li>
+<li><input disabled="" type="checkbox"> Email content not persisted unless the user saves it</li>
+<li><input disabled="" type="checkbox"> Email send and calendar writes confirmed by the user</li>
+<li><input disabled="" type="checkbox"> HTTPS, CORS locked, rate limits on <code>/chat</code> and uploads</li>
+<li><input disabled="" type="checkbox"> User can view/delete memories, disconnect Google, delete all data</li>
+<li><input disabled="" type="checkbox"> Test Google account with fake content used for development; no real personal data through free-tier LLMs</li>
+</ul>
+<hr>
+<h2>11. Testing strategy</h2>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Coverage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unit</td>
+<td>Lifecycle math, chunking, planner JSON validation, tool wrappers, token encryption</td>
+</tr>
+<tr>
+<td>Integration</td>
+<td>API with test Postgres and temp Chroma; deterministic fake LLM; mocked Google</td>
+</tr>
+<tr>
+<td>Isolation</td>
+<td>Explicit two-user tests for memory, documents, goals, tasks, Google tokens</td>
+</tr>
+<tr>
+<td>Scenario</td>
+<td>&quot;Add a goal to finish my ML course by 30 Nov&quot;, &quot;What are my tasks this week?&quot;, &quot;Summarize my notes&quot;, &quot;Plan 6 hours a week&quot;, &quot;Schedule these sessions on my calendar&quot;, &quot;Import this Drive file and quiz me&quot;</td>
+</tr>
+<tr>
+<td>Manual</td>
+<td>OAuth round trip with test users; weekly token-expiry behaviour</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>12. Deployment, cost and launch path</h2>
+<h3>12.1 Deployment</h3>
+<p>Docker images; Render services: FastAPI (Starter or Standard), Streamlit (Starter), PostgreSQL (paid Basic), persistent disk for ChromaDB. Prefer API embeddings if running on 512 MB RAM. Set spend limits on every API key.</p>
+<h3>12.2 Budget (from the Budget Estimate, prices as of 30 Sep 2026, ~₹95/US$)</h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Monthly</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A. Free / local</td>
+<td>$0 (₹0)</td>
+<td>Ollama or Gemini free tier with fake data; laptop demo only</td>
+</tr>
+<tr>
+<td>B. Lean cloud demo</td>
+<td><del>$24 (</del>₹2,300)</td>
+<td>Render lean + Flash-Lite, ~1,000 turns</td>
+</tr>
+<tr>
+<td>C. Small public beta</td>
+<td><del>$70–117 (</del>₹6,650–11,150)</td>
+<td>Bigger server, ~5,000 turns</td>
+</tr>
+</tbody>
+</table>
+<p>Google Calendar, Drive and Gmail API calls cost nothing at demo scale (quotas not verified; check the Cloud console). A 3-month project is about ₹5,500 without a paid coding agent, or about ₹11,200 with one.</p>
+<h3>12.3 Google launch path</h3>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Setup</th>
+<th>Limits</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Demo / viva</strong></td>
+<td>Testing mode, all scopes, up to 100 test users</td>
+<td>Unverified warning; restricted-scope tokens expire in 7 days; re-authorize before the viva</td>
+</tr>
+<tr>
+<td><strong>Public v1</strong></td>
+<td>Verified app with Calendar, <code>drive.file</code>, <code>gmail.send</code>/<code>compose</code></td>
+<td>Free verification, verified domain, privacy policy, demo video</td>
+</tr>
+<tr>
+<td><strong>Public with Gmail read / full Drive read</strong></td>
+<td>Verification + CASA security assessment, renewed yearly</td>
+<td>Roughly $5K–$20K per year (third-party estimate; get vendor quotes)</td>
+</tr>
+<tr>
+<td><strong>Organization-only</strong></td>
+<td>Google Workspace &quot;Internal&quot; app</td>
+<td>No verification, but only users inside one domain</td>
+</tr>
+</tbody>
+</table>
+<p>Google's Limited Use policy applies to Gmail and Drive data. Confirm how it applies to sending content to your LLM provider and storing it in Mem0/ChromaDB before any public launch.</p>
+<hr>
+<h2>13. Risks and mitigations</h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Impact</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>512 MB host runs out of memory</td>
+<td>Crashes</td>
+<td>API embeddings; upgrade to Standard ($25)</td>
+</tr>
+<tr>
+<td>Weak local models mishandle tool calls</td>
+<td>Bad agent behaviour</td>
+<td>Use a cloud model for the demo; keep tools simple; retries</td>
+</tr>
+<tr>
+<td>Agent loops and Mem0 add LLM calls</td>
+<td>Cost, latency</td>
+<td>5-iteration cap, last-N history, extract memory selectively</td>
+</tr>
+<tr>
+<td>Reasoning models inflate output cost</td>
+<td>Bill 2–4×</td>
+<td>Non-reasoning or low-effort settings</td>
+</tr>
+<tr>
+<td>Google Testing-mode token expiry</td>
+<td>Demo failure</td>
+<td>Reconnect before viva; backup screen recording</td>
+</tr>
+<tr>
+<td>Gmail/Drive content leaks via prompts</td>
+<td>Privacy breach</td>
+<td>Test accounts, paid or local LLM, minimum data, no training use</td>
+</tr>
+<tr>
+<td>Prompt injection via emails/documents</td>
+<td>Unwanted tool actions</td>
+<td>Data-not-instructions prompt; confirmation on writes; no auto-send</td>
+</tr>
+<tr>
+<td>Google review delays a public launch</td>
+<td>Timeline</td>
+<td>Launch with sensitive-only scopes first</td>
+</tr>
+<tr>
+<td>Free Render Postgres deleted after 30 days</td>
+<td>Data loss</td>
+<td>Local Docker Postgres in dev; paid plan for demo</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>14. Deliverables and definition of done</h2>
+<table>
+<thead>
+<tr>
+<th>Deliverable</th>
+<th>Done when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cloud-hosted web application</td>
+<td>Phase 10 acceptance passes</td>
+</tr>
+<tr>
+<td>User authentication</td>
+<td>Phase 1 tests pass; used by the UI</td>
+</tr>
+<tr>
+<td>Persistent memory</td>
+<td>Phases 2 and 6 pass across sessions and restarts</td>
+</tr>
+<tr>
+<td>Google integrations</td>
+<td>Phases 7-8 pass with test users; disconnect works</td>
+</tr>
+<tr>
+<td>Interactive dashboard</td>
+<td>Phase 9 acceptance passes</td>
+</tr>
+<tr>
+<td>Technical documentation</td>
+<td><code>docs/</code> complete: architecture, API, deployment, privacy, decisions</td>
+</tr>
+<tr>
+<td>Source repository</td>
+<td>One commit per phase, CI green</td>
+</tr>
+<tr>
+<td>Deployment guide</td>
+<td><code>docs/DEPLOYMENT.md</code> reproducible from scratch</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>15. Assumptions and items to verify</h2>
+<ul>
+<li>Library APIs (Mem0, LangGraph, ChromaDB, Google client libraries) must be checked against current docs.</li>
+<li>Google scope tiers, Testing-mode limits and CASA costs come from third-party summaries and Google support pages; confirm in the Cloud console and Google's OAuth verification docs.</li>
+<li>Token counts, prices and USD-INR rate are estimates; re-measure after Phase 5 using real logs.</li>
+<li>Model provider pricing and the free-tier privacy terms must be re-checked before paying or using real data.</li>
+</ul>
+
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+</body></html>
