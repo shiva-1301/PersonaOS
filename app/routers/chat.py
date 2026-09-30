@@ -8,7 +8,14 @@ from sqlalchemy import select, update
 
 from app.db.models import ChatMessage, ChatSession
 from app.deps import CurrentUser, DbSession
-from app.schemas.chat import ChatIn, ChatOut, MessageOut, SessionDetailOut, SessionOut
+from app.schemas.chat import (
+    ChatIn,
+    ChatOut,
+    MessageOut,
+    SessionDetailOut,
+    SessionOut,
+    SourceOut,
+)
 from app.services.chat_service import SessionNotFound, get_owned_session, run_chat_turn
 from app.services.llm import LLMConfigError
 
@@ -101,6 +108,10 @@ def chat(
         reply=turn.reply,
         memories_used=turn.memories_used,
         memory_status="pending",
+        sources=[
+            SourceOut(document_id=s.document_id, filename=s.filename, chunk_index=s.chunk_index)
+            for s in turn.sources
+        ],
     )
 
 

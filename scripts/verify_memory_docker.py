@@ -23,146 +23,40 @@ PowerShell:
 
 import argparse
 import getpass
-import json
 import os
 import random
-import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-API = "http://localhost:8000"
-BASE_COMPOSE = ["docker", "compose", "-f", str(ROOT / "docker-compose.yml")]
-FAKE_COMPOSE = [*BASE_COMPOSE, "-f", str(ROOT / "docker-compose.fake-auth.yml")]
+from docker_helpers import (
+    BASE_COMPOSE,
+    FAKE_COMPOSE,
+    Checks,
+    cleanup_in_container,
+    compose,
+    container_json,
+    container_python,
+    firebase_token,
+    http,
+    wait_healthy,
+)
 
-
-# ------------------------------------------------------------------------------ helpers
-
-
-def http(method: str, path: str, token: str | None = None, body: dict | None = None):
-    req = urllib.request.Request(
-        API + path,
-        method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={
-            "Content-Type": "application/json",
-            **({"Authorization": f"Bearer {token}"} if token else {}),
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            return resp.status, json.loads(resp.read() or b"null")
-    except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read() or b"null")
-
-
-def wait_healthy(timeout: float = 180) -> float:
-    start = time.monotonic()
-    while time.monotonic() - start < timeout:
-        try:
-            if http("GET", "/health")[0] == 200:
-                return time.monotonic() - start
-        except (urllib.error.URLError, ConnectionError, OSError):
-            pass
-        time.sleep(1)
-    raise SystemExit(f"API not healthy after {timeout}s: docker compose logs api")
-
-
-def compose(args: list[str], base: list[str]) -> None:
-    subprocess.run([*base, *args], cwd=ROOT, check=True, capture_output=True)
-
-
-def container_python(code: str, base: list[str]) -> str:
-    out = subprocess.run(
-        [*base, "exec", "-T", "api", "python", "-c", code],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return out.stdout.strip()
+check = Checks()
 
 
 def recall_in_container(user_id: str, query: str, base: list[str]) -> list[str]:
     """Run the app's real recall inside the api container; returns memory texts."""
     code = f"""
-import json, logging, uuid
-logging.disable(logging.WARNING)
-from app.config import Settings
-from app.db.session import make_engine, make_session_factory
-from app.services.container import Services
-s = Settings()
-db = make_session_factory(make_engine(s.DATABASE_URL))()
-hits = Services(s).memory.recall(db, uuid.UUID({user_id!r}), {query!r}, k=s.MEMORY_RECALL_K)
+hits = svc.memory.recall(db, uuid.UUID({user_id!r}), {query!r}, k=s.MEMORY_RECALL_K)
 print(json.dumps([h.text for h in hits]))
 """
-    return json.loads(container_python(code, base).splitlines()[-1])
-
-
-def cleanup_in_container(auth_uids: list[str], base: list[str]) -> None:
-    """Delete fake verification users everywhere: Postgres, Mem0 vectors, Mem0 SQLite."""
-    code = f"""
-import logging, sqlite3
-logging.disable(logging.WARNING)
-from sqlalchemy import select, delete
-from app.config import Settings
-from app.db.models import MemoryMeta, User
-from app.db.session import make_engine, make_session_factory
-from app.services.container import Services
-s = Settings()
-svc = Services(s)
-db = make_session_factory(make_engine(s.DATABASE_URL))()
-hist = sqlite3.connect(s.CHROMA_PATH + "/mem0_history.db")
-for uid in {auth_uids!r}:
-    user = db.scalar(select(User).where(User.auth_uid == uid))
-    if not user:
-        continue
-    ids = list(db.scalars(select(MemoryMeta.mem0_id).where(MemoryMeta.user_id == user.id)))
-    svc.memory._memory.delete_all(user_id=str(user.id))
-    hist.executemany("delete from history where memory_id = ?", [(i,) for i in ids])
-    hist.execute("delete from messages where session_scope = ?", (f"user_id={{user.id}}",))
-    db.delete(user)
-hist.commit()
-db.commit()
-print("cleaned")
-"""
-    container_python(code, base)
-
-
-def firebase_token(email: str, password: str) -> str:
-    from dotenv import dotenv_values
-
-    key = {**dotenv_values(ROOT / ".env"), **os.environ}.get("FIREBASE_WEB_API_KEY")
-    if not key:
-        raise SystemExit("FIREBASE_WEB_API_KEY missing in .env")
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={key}"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps({"email": email, "password": password, "returnSecureToken": True}).encode(),
-        headers={"Content-Type": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read())["idToken"]
-
-
-# ------------------------------------------------------------------------------ flow
-
-failures: list[str] = []
-
-
-def check(ok: bool, label: str) -> None:
-    print(f"  [{'PASS' if ok else 'FAIL'}] {label}")
-    if not ok:
-        failures.append(label)
+    return container_json(code, base)
 
 
 def wait_for_extraction(token: str, session_id: str, message_id: str, timeout: float) -> float:
     start = time.monotonic()
     while True:
-        status, detail = http("GET", f"/chat/sessions/{session_id}", token)
+        _, detail = http("GET", f"/chat/sessions/{session_id}", token)
         state = next(
             (m["memory_status"] for m in detail.get("messages", []) if m["id"] == message_id),
             None,
@@ -271,8 +165,7 @@ def main() -> int:
             compose(["up", "-d", "api"], BASE_COMPOSE)
             wait_healthy()
 
-    print("\nRESULT:", "PASS" if not failures else f"FAIL ({len(failures)}): {failures}")
-    return 0 if not failures else 1
+    return check.result()
 
 
 if __name__ == "__main__":

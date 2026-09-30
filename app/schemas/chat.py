@@ -17,6 +17,14 @@ class ChatIn(BaseModel):
         return v
 
 
+class SourceOut(BaseModel):
+    """A document excerpt that was given to the assistant for this reply (a citation)."""
+
+    document_id: uuid.UUID
+    filename: str
+    chunk_index: int
+
+
 class ChatOut(BaseModel):
     session_id: uuid.UUID
     # The user message of this turn; poll GET /chat/sessions/{id} for its memory_status.
@@ -25,6 +33,7 @@ class ChatOut(BaseModel):
     memories_used: int
     # Memory extraction runs after the reply: "pending" here, later "done" or "failed".
     memory_status: str
+    sources: list[SourceOut] = []
 
 
 class SessionOut(BaseModel):

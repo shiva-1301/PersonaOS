@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 3 (chat with long-term memory)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 4 (documents and RAG)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -42,6 +42,9 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 .venv\Scripts\python.exe scripts\smoke_tool_calling.py  # compare tool calling across models
 # Full Docker memory check: store -> recall -> `docker compose restart api` -> recall -> user B sees nothing
 .venv\Scripts\python.exe scripts\verify_memory_docker.py
+# Full Docker document check on the files in test_files\ (git-ignored): ingest, retrieval,
+# chat citations, user isolation, restart persistence, summary, delete -> 0 vectors
+.venv\Scripts\python.exe scripts\verify_documents_docker.py
 ```
 
 Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
@@ -56,7 +59,14 @@ curl.exe -H "Authorization: Bearer $t" http://localhost:8000/me
 # Chat (first call starts a session; pass session_id to continue it)
 $body = @{ message = "I study best after 6 pm." } | ConvertTo-Json
 Invoke-RestMethod -Method Post http://localhost:8000/chat -Headers @{Authorization="Bearer $t"} -ContentType "application/json" -Body $body
+
+# Documents (PDF/DOCX/TXT, max 10 MB): upload, then poll until status is "ready"
+curl.exe -H "Authorization: Bearer $t" -F "file=@test_files\ML_Notes_2_Decision_Trees.docx" http://localhost:8000/documents
+curl.exe -H "Authorization: Bearer $t" http://localhost:8000/documents
+curl.exe -H "Authorization: Bearer $t" "http://localhost:8000/documents/search?q=entropy"
 ```
+
+Chat answers cite the documents they used in `sources`. Document text is always passed to the model as clearly delimited, untrusted data.
 
 If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
 

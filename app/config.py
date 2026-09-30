@@ -79,6 +79,20 @@ class Settings(BaseSettings):
     CHROMA_PATH: str = "./chroma_data"
     MAX_UPLOAD_MB: int = Field(default=10, gt=0)
 
+    # --- Documents / RAG ---
+    # ~800 tokens with ~100 overlap at ~4 characters per token.
+    RAG_CHUNK_CHARS: int = Field(default=3200, ge=200)
+    RAG_CHUNK_OVERLAP_CHARS: int = Field(default=400, ge=0)
+    # Chunks retrieved per chat turn, and the minimum cosine similarity to include one.
+    RAG_TOP_K: int = Field(default=4, ge=1, le=20)
+    # Calibrated on nomic-embed-text (docs/DECISIONS.md): on-topic top hits 0.59-0.73,
+    # off-topic questions at most 0.51.
+    RAG_MIN_RELEVANCE: float = Field(default=0.55, ge=0, le=1)
+    # Also drop chunks scoring more than this below the best chunk of the same query.
+    RAG_RELATIVE_MARGIN: float = Field(default=0.1, ge=0, le=1)
+    # Map-reduce summaries: max characters of chunk text per LLM call.
+    SUMMARY_GROUP_CHARS: int = Field(default=9000, ge=1000)
+
     # --- Web ---
     FRONTEND_ORIGIN: str = "http://localhost:8501"
 
@@ -100,6 +114,12 @@ class Settings(BaseSettings):
             ):
                 if getattr(self, name) == "fake":
                     raise ValueError(f"{name}=fake is not allowed when APP_ENV=production")
+        return self
+
+    @model_validator(mode="after")
+    def _chunk_overlap_below_size(self) -> "Settings":
+        if self.RAG_CHUNK_OVERLAP_CHARS >= self.RAG_CHUNK_CHARS:
+            raise ValueError("RAG_CHUNK_OVERLAP_CHARS must be smaller than RAG_CHUNK_CHARS")
         return self
 
     @model_validator(mode="after")

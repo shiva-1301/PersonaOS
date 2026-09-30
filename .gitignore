@@ -24,3 +24,6 @@ Thumbs.db
 # Test / lint caches
 .pytest_cache/
 .ruff_cache/
+
+# Local test documents (owner-provided; not committed)
+test_files/

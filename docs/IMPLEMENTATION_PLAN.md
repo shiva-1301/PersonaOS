@@ -63,8 +63,8 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 |---|---|---|---|---|
 | 1 | App scaffold, Docker Compose, config, `/health` | – | Docker Desktop running | ✅ Verified 30 Sep 2026 |
 | 2 | DB models, Alembic, Firebase JWT auth, `/me` | 1 | Firebase project, `FIREBASE_PROJECT_ID`, 2 test users | ✅ Verified 1 Oct 2026 |
-| 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | 🟨 Built, awaiting your verification |
-| 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | ⬜ |
+| 3 | LLM factory, Mem0 memory, plain chat | 2 | `GEMINI_API_KEY`; Ollama with `nomic-embed-text` + an ~8B chat model pulled | ✅ Verified 1 Oct 2026 |
+| 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | 🟨 Built, awaiting your verification |
 | 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ⬜ |
 | 6 | LangGraph agent with tools | 3, 4, 5 | – | ⬜ |
 | 7 | Memory lifecycle, supersession, privacy endpoints | 3, 6 | `CRON_SECRET` | ⬜ |
@@ -208,7 +208,7 @@ curl.exe -i http://localhost:8000/health
 - A pure decay function `decay(now, ...)`: `S = 14 × (1 + 0.5 × access_count)` and `strength = exp(−days / S)`, where below 0.5 is stale and below 0.15 is archived.
 - Supersession through **our own LLM contradiction check**. Mem0 2.2.1 is ADD-only and never emits UPDATE events (see DECISIONS.md, Phase 3).
 - `jobs/memory_lifecycle.py` behind `POST /internal/jobs/memory-lifecycle` (`CRON_SECRET`, constant-time compare). It's idempotent and also cleans up orphaned meta rows.
-- `routers/memory.py`: `GET /memory`, `DELETE /memory/{id}`, `GET /memory/health`, and `DELETE /me/data` (with an explicit confirmation field).
+- `routers/memory.py`: `GET /memory`, `DELETE /memory/{id}`, `GET /memory/health`, and `DELETE /me/data` (with an explicit confirmation field). It must also purge Mem0's SQLite history (`<CHROMA_PATH>/mem0_history.db`: `history` rows by the user's memory IDs, `messages` by `session_scope`) and **all of the user's document chunks in Chroma**, because a Postgres cascade doesn't reach either (see DECISIONS.md, Phases 3 and 4).
 
 **Tests (fake clock):** 60 untouched days leaves the memory archived and out of recall; frequent access slows decay; the reinforcement cap holds; a contradiction supersedes; a wrong cron secret gets 401 or 403; `DELETE /me/data` leaves zero rows or vectors for the user and leaves other users untouched.
 

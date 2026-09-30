@@ -1,5 +1,5 @@
 # Runtime dependencies (pinned; verified together with `pip check`).
-# Later phases add: parsers (4), LangGraph (6).
+# Later phases add: LangGraph (6).
 fastapi==0.142.2
 uvicorn[standard]==0.54.0
 pydantic==2.13.5
@@ -23,5 +23,11 @@ langchain-google-genai==4.4.0
 langchain-ollama==1.1.0
 mem0ai==2.2.1
 chromadb==1.5.9
+# Documents (Phase 4): uploads, PDF/DOCX parsing, text encoding detection.
+python-multipart==0.0.32
+pypdf==6.19.0
+python-docx==1.2.0
+charset-normalizer==3.5.2
+
 # zoneinfo needs tz data on Windows and slim images.
 tzdata==2026.4

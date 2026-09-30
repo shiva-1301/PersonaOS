@@ -12,8 +12,8 @@ from app.config import Settings, get_settings
 from app.db.session import make_engine, make_session_factory
 from app.errors import register_error_handlers
 from app.logging_config import setup_logging
-from app.middleware import RequestIdMiddleware
-from app.routers import chat, health, users
+from app.middleware import RequestIdMiddleware, UploadSizeLimitMiddleware
+from app.routers import chat, documents, health, users
 from app.services.container import Services
 from app.services.llm import chat_model_name, memory_model_settings
 
@@ -40,12 +40,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Models, Chroma and Mem0 are built lazily on first use (see services/container.py).
     app.state.services = Services(settings)
 
+    app.add_middleware(UploadSizeLimitMiddleware, max_bytes=settings.MAX_UPLOAD_MB * 1024 * 1024)
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
 
     app.include_router(health.router)
     app.include_router(users.router)
     app.include_router(chat.router)
+    app.include_router(documents.router)
 
     mem = memory_model_settings(settings)
     logger.info(

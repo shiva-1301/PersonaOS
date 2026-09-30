@@ -103,9 +103,10 @@ def fake_reply(messages: list[BaseMessage]) -> str:
     if MEMORIES_HEADER in system:
         block = system.split(MEMORIES_HEADER, 1)[1].split("\n## ", 1)[0]
         memories = [ln[2:].strip() for ln in block.splitlines() if ln.startswith("- ")]
+    sources = re.findall(r'UNTRUSTED_DOCUMENT_EXCERPT source="([^"]*)"', system)
     last_user = next((_content(m) for m in reversed(messages) if m.type == "human"), "")
     history = sum(1 for m in messages if m.type in ("human", "ai")) - 1
-    return f"ECHO: {last_user} | MEMORIES: {memories} | HISTORY: {history}"
+    return f"ECHO: {last_user} | MEMORIES: {memories} | HISTORY: {history} | SOURCES: {sources}"
 
 
 class FakeChatModel(BaseChatModel):

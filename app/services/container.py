@@ -16,6 +16,7 @@ from app.services.llm import (
     get_memory_model,
 )
 from app.services.memory_service import MemoryService, build_memory
+from app.services.rag_service import RagService
 from app.services.vectorstore import get_chroma_client
 
 
@@ -32,7 +33,7 @@ class Services:
             return self._cache[name]
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in ("chat_model", "memory_model", "embedder", "chroma", "memory"):
+        if name in ("chat_model", "memory_model", "embedder", "chroma", "memory", "rag"):
             self._cache[name] = value
         else:
             super().__setattr__(name, value)
@@ -62,3 +63,7 @@ class Services:
                 build_memory(self.settings, self.memory_model, self.embedder, self.chroma)
             ),
         )
+
+    @property
+    def rag(self) -> RagService:
+        return self._get("rag", lambda: RagService(self.settings, self.embedder, self.chroma))

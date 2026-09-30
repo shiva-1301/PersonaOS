@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent.prompts import build_system_prompt
+from app.agent.prompts import Excerpt, build_system_prompt
 from app.db.models import ChatMessage, ChatSession, User
 from app.services.container import Services
 from app.services.llm import invoke_with_backoff
@@ -29,11 +29,19 @@ class SessionNotFound(Exception):
 
 
 @dataclass(frozen=True)
+class Source:
+    document_id: uuid.UUID
+    filename: str
+    chunk_index: int
+
+
+@dataclass(frozen=True)
 class ChatTurn:
     session_id: uuid.UUID
     user_message_id: uuid.UUID
     reply: str
     memories_used: int
+    sources: list[Source]
 
 
 def get_owned_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> ChatSession:
@@ -103,10 +111,25 @@ def run_chat_turn(
         logger.warning("Memory recall failed", extra={"error": type(exc).__name__})
         memories = []
 
+    try:
+        chunks = services.rag.retrieve(
+            user.id,
+            message,
+            k=settings.RAG_TOP_K,
+            min_relevance=settings.RAG_MIN_RELEVANCE,
+            relative_margin=settings.RAG_RELATIVE_MARGIN,
+        )
+    except Exception as exc:
+        logger.warning("Document retrieval failed", extra={"error": type(exc).__name__})
+        chunks = []
+
     prompt: list[BaseMessage] = [
         SystemMessage(
             build_system_prompt(
-                [m.text for m in memories], now=_user_now(user), timezone=user.timezone
+                [m.text for m in memories],
+                now=_user_now(user),
+                timezone=user.timezone,
+                excerpts=[Excerpt(c.filename, c.chunk_index, c.text) for c in chunks],
             )
         ),
         *history,
@@ -124,6 +147,7 @@ def run_chat_turn(
         extra={
             "llm_ms": round((time.perf_counter() - started) * 1000),
             "memories_used": len(memories),
+            "chunks_used": len(chunks),
             "history_messages": len(history),
         },
     )
@@ -156,4 +180,5 @@ def run_chat_turn(
         user_message_id=user_message.id,
         reply=reply,
         memories_used=len(memories),
+        sources=[Source(c.document_id, c.filename, c.chunk_index) for c in chunks],
     )
