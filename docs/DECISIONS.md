@@ -249,3 +249,16 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
 - **After `docker compose restart api`:** the goal, all tasks and the progress were unchanged.
 
 **Quality note (not a rule violation):** qwen front-loaded the plan (9 sessions in the first 9 days, then 1 more) even though the prompt asks it to spread sessions evenly. The rules only guarantee window, budget and no past dates. If even spacing matters, a later option is to distribute sessions deterministically, e.g. by pinning due dates to evenly spaced slots.
+
+### Phase 5 fix: plan order and even spacing (2026-10-01, after owner review)
+**Problems found by reading a real plan in Docker:**
+1. **Order bug (our code).** The weekly-budget rule moved an overflowing session +7 days *independently*, so "Session 11: Recurrent Neural Networks" landed on 18 Oct, after Sessions 12–16.
+2. **Bunching (model behaviour).** qwen put 16 of 17 sessions in the first 16 days, then a single review, leaving the last days before the deadline empty.
+
+| Decision | Reason |
+|---|---|
+| `normalise_plan` now schedules **sequentially in the model's chronological order** (ties broken by list order). A session never starts before the previous one ends: if it would, it moves to the next day at its usual time. A session that would push its calendar week over the budget moves to **the next Monday at the same time of day**. Sessions that no longer fit before the end are dropped and reported. The budget can therefore only push sessions later, never out of order, and sessions never overlap. | Fixes problem 1. Regression test: `test_budget_moves_never_reorder_sessions`, which reproduces the 17-session case. |
+| **`spread_evenly` (default `true`) on `POST /goals/{id}/plan`.** The model still decides what and how many sessions, their order and length, and the usual time of day. The code picks **evenly spaced days across the whole window** (one session per day at most), at the **median local time of day** of the model's proposals, so "after 6 pm" still holds. Days whose slot is already in the past are skipped. If there are more sessions than days, the model's own dates are kept (with an adjustment note). Setting `spread_evenly: false` keeps the model's own dates, still with the order and budget rules. | Fixes problem 2 deterministically instead of relying on the prompt. The owner chose to apply both fixes. |
+| The adjustment wording is now "Moved N session(s) later to respect the weekly budget and keep sessions in order." Spreading adds "Spread N session(s) evenly from <day> to <day> at HH:MM." | Moves can now be by days, not only whole weeks. |
+
+**Re-verified in Docker (qwen2.5:7b), 29/29 checks, including the new ones** ("sessions stay in order", "last session in the final week", "evenly spaced"): 14 sessions from Thu 1 Oct to Wed 28 Oct, every 2–3 days, all at 19:00 Kolkata time, in curriculum order, with a 120-minute final project last and a busiest week of 240/360 minutes. The plan took 67.5 s.

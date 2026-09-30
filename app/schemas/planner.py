@@ -114,6 +114,9 @@ class PlanRequest(BaseModel):
     end_date: date | None = None
     # Extra preferences for this plan; remembered preferences are added automatically.
     preferences: str | None = Field(default=None, max_length=1000)
+    # Spread sessions evenly across the whole window (at the plan's usual time of day)
+    # instead of keeping the model's own dates, which tend to bunch up at the start.
+    spread_evenly: bool = True
 
     @model_validator(mode="after")
     def _order(self) -> "PlanRequest":

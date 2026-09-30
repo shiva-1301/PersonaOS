@@ -15,6 +15,7 @@ PowerShell:
 """
 
 import argparse
+import re
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -120,6 +121,20 @@ def main() -> int:
             "remembered 'after 6 pm' preference passed to the planner",
         )
         print(f"  {evening}/{len(tasks)} sessions start at or after 18:00 Kolkata time")
+
+        # Order: "Session N" numbers must increase with the date (curriculum order).
+        numbers = [int(m.group(1)) for t in tasks if (m := re.search(r"(\d+)", t["title"]))]
+        check(numbers == sorted(numbers), "sessions stay in order (numbers increase with date)")
+        # Spacing: evenly spread over the whole window, not bunched at the start.
+        days = [datetime.fromisoformat(t["due_at"]).astimezone(TZ).date() for t in tasks]
+        gaps = [(b - a).days for a, b in zip(days, days[1:], strict=False)]
+        check(
+            days[-1] >= target - timedelta(days=6), f"last session in the final week ({days[-1]})"
+        )
+        check(
+            not gaps or max(gaps) - min(gaps) <= 1,
+            f"evenly spaced (gaps in days: {sorted(set(gaps))})",
+        )
 
         print("\n3. Progress and completed_at")
         for t in tasks[:2]:

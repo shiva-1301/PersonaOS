@@ -4,8 +4,9 @@
 2. Recall remembered preferences ("studies best after 6 pm") and merge request preferences.
 3. Ask the LLM (JSON mode) for {"tasks": [...]}; validate with Pydantic; on invalid output
    retry up to 2 more times, telling the model what was wrong; then fail readably.
-4. Deterministic post-processing (normalise_plan): clamp into the window, no past times,
-   cap each calendar week at hours_per_week, move overflow to later weeks, drop the rest.
+4. Deterministic post-processing (normalise_plan): keep the model's session order,
+   optionally spread sessions evenly over the window, no past times, cap each calendar
+   week at hours_per_week (moving sessions later, never out of order), drop the rest.
 5. Save every task, linked to the goal, in one transaction.
 """
 
@@ -161,6 +162,34 @@ def _shift_into_window(due: datetime, earliest: datetime, latest: datetime, tz) 
     return due
 
 
+def _at(day: date, minute_of_day: int, tz: ZoneInfo) -> datetime:
+    """Local wall-clock time on `day` (minutes after midnight), as UTC."""
+    return (local_midnight(day, tz) + timedelta(minutes=minute_of_day)).astimezone(UTC)
+
+
+def _minute_of_day(moment: datetime, tz: ZoneInfo) -> int:
+    local = moment.astimezone(tz)
+    return local.hour * 60 + local.minute
+
+
+def _even_targets(
+    count: int, minute: int, earliest: datetime, latest: datetime, tz: ZoneInfo
+) -> list[datetime] | None:
+    """`count` evenly spaced days across the window, all at `minute` local time.
+    None if there are fewer usable days than sessions (one session per day at most)."""
+    first, last = earliest.astimezone(tz).date(), latest.astimezone(tz).date()
+    days = [
+        first + timedelta(days=i)
+        for i in range((last - first).days + 1)
+        if earliest <= _at(first + timedelta(days=i), minute, tz) <= latest
+    ]
+    if count > len(days):
+        return None
+    if count == 1:
+        return [_at(days[0], minute, tz)]
+    return [_at(days[round(i * (len(days) - 1) / (count - 1))], minute, tz) for i in range(count)]
+
+
 def normalise_plan(
     proposed: list[LLMPlanTask],
     *,
@@ -168,55 +197,95 @@ def normalise_plan(
     latest: datetime,
     tz: ZoneInfo,
     weekly_budget_minutes: int,
+    spread_evenly: bool = False,
 ) -> tuple[list[PlannedSession], list[str]]:
-    """Enforce window, no-past and weekly-budget rules. Pure: easy to test."""
-    moved_in = clamped = moved_later = dropped = 0
-    sessions: list[PlannedSession] = []
-    for item in proposed:
-        due = to_utc(item.due_at, tz)
-        fixed = _shift_into_window(due, earliest, latest, tz)
-        if fixed != due:
-            moved_in += 1
-        minutes = item.est_minutes
-        if minutes > weekly_budget_minutes:
-            minutes = weekly_budget_minutes
-            clamped += 1
-        sessions.append(PlannedSession(item.title.strip(), item.notes, fixed, minutes))
+    """Enforce the rules on the model's plan. Pure: easy to test.
 
-    sessions.sort(key=lambda s: s.due_at)
+    - Sessions keep the model's chronological order (curriculum order) throughout.
+    - Target times: the model's own (moved into the window, keeping the local time of
+      day), or with spread_evenly, evenly spaced days across the whole window at the
+      median time of day the model chose (so "after 6 pm" still holds).
+    - Scheduling is sequential: a session never starts before the previous one ends, and
+      a session that would push its calendar week over the budget moves to the next
+      Monday at the same time of day. Sessions that no longer fit before the end are
+      dropped. So the budget can only push sessions later, never out of order.
+    """
+    notes: list[str] = []
+    budget = weekly_budget_minutes
+    shortened = sum(1 for p in proposed if p.est_minutes > budget)
+
+    # Chronological order as the model intended (ties: the order it listed them).
+    items = sorted(
+        enumerate(proposed),
+        key=lambda pair: (
+            _shift_into_window(to_utc(pair[1].due_at, tz), earliest, latest, tz),
+            pair[0],
+        ),
+    )
+    ordered = [p for _, p in items]
+    own_targets = [_shift_into_window(to_utc(p.due_at, tz), earliest, latest, tz) for p in ordered]
+
+    targets = own_targets
+    if spread_evenly:
+        minutes = sorted(_minute_of_day(t, tz) for t in own_targets)
+        minute = minutes[len(minutes) // 2]
+        even = _even_targets(len(ordered), minute, earliest, latest, tz)
+        if even is None:
+            notes.append(
+                "Kept the proposed dates: more sessions than days in the window to spread over."
+            )
+        else:
+            targets = even
+            first, last = even[0].astimezone(tz), even[-1].astimezone(tz)
+            notes.append(
+                f"Spread {len(even)} session(s) evenly from {first:%a %d %b} to "
+                f"{last:%a %d %b} at {first:%H:%M}."
+            )
+    else:
+        moved_in = sum(
+            1 for p, t in zip(ordered, own_targets, strict=True) if to_utc(p.due_at, tz) != t
+        )
+        if moved_in:
+            notes.append(
+                f"Moved {moved_in} session(s) that fell outside the plan window or in the past."
+            )
+
     used: dict[date, int] = {}
     kept: list[PlannedSession] = []
-    for s in sessions:
-        due = s.due_at
-        while (
-            due <= latest
-            and used.get(week_start(due, tz), 0) + s.est_minutes > weekly_budget_minutes
-        ):
-            due += timedelta(days=7)
+    moved_later = dropped = 0
+    prev_end: datetime | None = None
+    for item, target in zip(ordered, targets, strict=True):
+        length = min(item.est_minutes, budget)
+        minute = _minute_of_day(target, tz)
+        due = target
+        if prev_end is not None and due < prev_end:
+            # Never before the previous session ends: same time of day, next free day.
+            day = prev_end.astimezone(tz).date()
+            due = _at(day, minute, tz)
+            if due < prev_end:
+                due = _at(day + timedelta(days=1), minute, tz)
+        while due <= latest and used.get(week_start(due, tz), 0) + length > budget:
+            due = _at(week_start(due, tz) + timedelta(days=7), minute, tz)
         if due > latest:
             dropped += 1
             continue
-        if due != s.due_at:
+        if due != target:
             moved_later += 1
-        used[week_start(due, tz)] = used.get(week_start(due, tz), 0) + s.est_minutes
-        kept.append(PlannedSession(s.title, s.notes, due, s.est_minutes))
+        used[week_start(due, tz)] = used.get(week_start(due, tz), 0) + length
+        kept.append(PlannedSession(item.title.strip(), item.notes, due, length))
+        prev_end = due + timedelta(minutes=length)
 
-    notes = []
-    if moved_in:
-        notes.append(
-            f"Moved {moved_in} session(s) that fell outside the plan window or in the past."
-        )
-    if clamped:
-        notes.append(f"Shortened {clamped} session(s) longer than the weekly budget.")
+    if shortened:
+        notes.append(f"Shortened {shortened} session(s) longer than the weekly budget.")
     if moved_later:
         notes.append(
-            f"Moved {moved_later} session(s) to a later week to respect the weekly budget."
+            f"Moved {moved_later} session(s) later to respect the weekly budget and keep "
+            "sessions in order."
         )
     if dropped:
         notes.append(
             f"Dropped {dropped} session(s) that did not fit the weekly budget before the end date."
         )
-    kept.sort(key=lambda s: s.due_at)
     return kept, notes
 
 
@@ -267,7 +336,12 @@ def generate_study_plan(
         rate_attempts=services.settings.LLM_RATE_LIMIT_ATTEMPTS,
     )
     sessions, adjustments = normalise_plan(
-        plan.tasks, earliest=earliest, latest=latest, tz=tz, weekly_budget_minutes=budget
+        plan.tasks,
+        earliest=earliest,
+        latest=latest,
+        tz=tz,
+        weekly_budget_minutes=budget,
+        spread_evenly=req.spread_evenly,
     )
     if not sessions:
         raise PlanGenerationError("no session fits the window and weekly budget")

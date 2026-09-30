@@ -85,7 +85,7 @@ def test_normalise_enforces_weekly_budget_by_moving_then_dropping():
         per_week[week_start(k.due_at, UTC_TZ)] = per_week.get(week_start(k.due_at, UTC_TZ), 0) + 60
     assert all(minutes <= 120 for minutes in per_week.values())
     assert len(kept) == 4  # 2 in week 1, 2 moved to week 2, 1 dropped
-    assert any("to a later week" in n for n in notes)
+    assert any("later to respect the weekly budget" in n for n in notes)
     assert any("Dropped 1 session(s)" in n for n in notes)
 
 
@@ -309,3 +309,140 @@ def test_rate_limit_is_503(db_app, db_client, goal):
     resp = db_client.post(f"/goals/{goal['id']}/plan", json={"hours_per_week": 2}, headers=A)
     assert resp.status_code == 503
     assert resp.headers["Retry-After"] == "60"
+
+
+# --------------------------------------------------------------------------- order + spacing
+
+
+def _numbers(kept) -> list[int]:
+    return [int(k.title.split()[1].rstrip(":")) for k in kept]
+
+
+def test_budget_moves_never_reorder_sessions():
+    """Regression: in Docker, 'Session 11' landed after Sessions 12-16 once the weekly
+    budget pushed it to a later week. The model's order must survive the budget rule."""
+    ist = ZoneInfo("Asia/Kolkata")
+    earliest = datetime(2026, 10, 1, 0, 0, tzinfo=ist).astimezone(UTC)  # Thursday
+    latest = datetime(2026, 10, 28, 23, 59, tzinfo=ist).astimezone(UTC)
+    proposed = _tasks(
+        *[
+            session(date(2026, 10, 1) + timedelta(days=i), 19, 60, f"Session {i + 1}:")
+            for i in range(17)
+        ]
+    )
+    kept, notes = normalise_plan(
+        proposed, earliest=earliest, latest=latest, tz=ist, weekly_budget_minutes=360
+    )
+    assert _numbers(kept) == sorted(_numbers(kept))  # chronological == curriculum order
+    assert [k.due_at for k in kept] == sorted(k.due_at for k in kept)
+    per_week: dict[date, int] = {}
+    for k in kept:
+        per_week[week_start(k.due_at, ist)] = per_week.get(week_start(k.due_at, ist), 0) + 60
+    assert max(per_week.values()) <= 360
+    assert all(k.due_at.astimezone(ist).hour == 19 for k in kept)
+
+
+def test_sessions_never_overlap():
+    earliest = datetime(2026, 10, 5, tzinfo=UTC)
+    kept, _ = normalise_plan(
+        _tasks(
+            session(date(2026, 10, 6), 18, 90, "Session 1:"),
+            session(date(2026, 10, 6), 18, 60, "Session 2:"),
+        ),
+        earliest=earliest,
+        latest=earliest + timedelta(days=13),
+        tz=UTC_TZ,
+        weekly_budget_minutes=600,
+    )
+    assert kept[1].due_at >= kept[0].due_at + timedelta(minutes=kept[0].est_minutes)
+
+
+def test_spread_evenly_over_the_whole_window_at_the_usual_time():
+    ist = ZoneInfo("Asia/Kolkata")
+    now = datetime(2026, 10, 1, 3, 0, tzinfo=ist)
+    latest = datetime(2026, 10, 28, 23, 59, tzinfo=ist).astimezone(UTC)
+    # Model bunches 8 sessions into the first 8 days, at 18:00-20:00.
+    proposed = _tasks(
+        *[
+            session(date(2026, 10, 1) + timedelta(days=i), 18 + i % 3, 60, f"Session {i + 1}:")
+            for i in range(8)
+        ]
+    )
+    kept, notes = normalise_plan(
+        proposed,
+        earliest=now.astimezone(UTC),
+        latest=latest,
+        tz=ist,
+        weekly_budget_minutes=360,
+        spread_evenly=True,
+    )
+    days = [k.due_at.astimezone(ist).date() for k in kept]
+    assert len(kept) == 8
+    assert _numbers(kept) == list(range(1, 9))
+    assert days[0] == date(2026, 10, 1) and days[-1] == date(2026, 10, 28)
+    gaps = [(b - a).days for a, b in zip(days, days[1:], strict=False)]
+    assert max(gaps) - min(gaps) <= 1  # evenly spaced
+    assert {k.due_at.astimezone(ist).strftime("%H:%M") for k in kept} == {"19:00"}  # median
+    assert any("Spread 8 session(s) evenly" in n for n in notes)
+
+
+def test_spread_skips_today_if_the_usual_time_has_passed():
+    now = datetime(2026, 10, 5, 20, 0, tzinfo=UTC)  # 20:00, sessions are at 18:00
+    kept, _ = normalise_plan(
+        _tasks(*[session(date(2026, 10, 6 + i), 18) for i in range(3)]),
+        earliest=now,
+        latest=datetime(2026, 10, 12, 23, 59, tzinfo=UTC),
+        tz=UTC_TZ,
+        weekly_budget_minutes=600,
+        spread_evenly=True,
+    )
+    assert kept[0].due_at == datetime(2026, 10, 6, 18, 0, tzinfo=UTC)
+    assert kept[-1].due_at == datetime(2026, 10, 12, 18, 0, tzinfo=UTC)
+
+
+def test_spread_falls_back_when_more_sessions_than_days():
+    earliest = datetime(2026, 10, 5, tzinfo=UTC)
+    proposed = _tasks(
+        *[session(date(2026, 10, 5), 8 + i, 30, f"Session {i + 1}:") for i in range(5)]
+    )
+    kept, notes = normalise_plan(
+        proposed,
+        earliest=earliest,
+        latest=datetime(2026, 10, 7, 23, 59, tzinfo=UTC),
+        tz=UTC_TZ,
+        weekly_budget_minutes=600,
+        spread_evenly=True,
+    )
+    assert any("more sessions than days" in n for n in notes)
+    assert _numbers(kept) == [1, 2, 3, 4, 5]
+
+
+def test_spread_is_the_api_default(db_app, db_client, goal):
+    d = today() + timedelta(days=1)
+    use_model(
+        db_app,
+        [
+            plan_json(
+                *[session(d + timedelta(days=i), 19, 60, f"Session {i + 1}:") for i in range(4)]
+            )
+        ],
+    )
+    body = db_client.post(f"/goals/{goal['id']}/plan", json={"hours_per_week": 3}, headers=A).json()
+    days = [datetime.fromisoformat(t["due_at"]).date() for t in body["tasks"]]
+    assert days[-1] >= datetime.fromisoformat(goal["target_date"]).date() - timedelta(days=1)
+    assert any("evenly" in a for a in body["adjustments"])
+
+    use_model(
+        db_app,
+        [
+            plan_json(
+                *[session(d + timedelta(days=i), 19, 60, f"Session {i + 1}:") for i in range(4)]
+            )
+        ],
+    )
+    kept_dates = db_client.post(
+        f"/goals/{goal['id']}/plan", json={"hours_per_week": 6, "spread_evenly": False}, headers=A
+    ).json()["tasks"]
+    assert [datetime.fromisoformat(t["due_at"]).date() for t in kept_dates] == [
+        d + timedelta(days=i) for i in range(4)
+    ]
