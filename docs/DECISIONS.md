@@ -405,3 +405,14 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
   - In that case, the runner creates the plan in code before the model runs, through the same `plan_for_goal` as the tool. The model gets the result in the system prompt and only describes it. Its own `generate_study_plan` call for that goal is refused ("already created in this message"), so there are never duplicate sessions.
   - Anything less clear (dates, preferences, an ambiguous goal, no target date) goes to the model as before.
   - The prompt rule was kept as reworded.
+
+## Status at pause (1 Oct 2026)
+- **Phase 8 (Calendar):** built and verified once by you. The follow-ups below are committed:
+  - the timezone test;
+  - "yes" confirmed in code;
+  - the check-script fixes;
+  - the study-plan guard;
+  - `tools_used` without refused repeat calls.
+- Waiting for your rerun of `google_calendar_check.py --timezone Asia/Kolkata`.
+- **Phase 9:** not started. Nothing is in progress or half done.
+- **Not verified with the final code:** the full Docker agent check, which was stopped for time. Offline: 325 passed, ruff clean.

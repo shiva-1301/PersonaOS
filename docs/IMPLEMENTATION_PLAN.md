@@ -68,8 +68,28 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 | 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ✅ Verified 1 Oct 2026 (with order/spacing fix) |
 | 6 | LangGraph agent with tools | 3, 4, 5 | – | ✅ Verified 1 Oct 2026 |
 | 7 | Memory lifecycle, supersession, privacy endpoints | 3, 6 | `CRON_SECRET` | ✅ Verified 1 Oct 2026 |
-| 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | 🟨 Calendar built, awaiting your verification (Drive/Gmail not built) |
-| 9 | Analytics API and Streamlit dashboard | 5, 6, 7 | Firebase web app config | ⬜ |
+| 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | 🟨 Calendar verified 1 Oct 2026; follow-up fixes (timezone, "yes" in code, study-plan guard) committed, awaiting your rerun of the manual check (Drive/Gmail not built) |
+| 9 | Analytics API and Streamlit dashboard | 5, 6, 7 | Firebase web app config | ⬜ Not started (on hold until you confirm Phase 8) |
+
+### Where things stand (paused 1 Oct 2026)
+
+- **Done:** Phases 1–7, plus Phase 8 Calendar. The first manual Google check passed. These follow-ups are committed and pushed:
+  - events are created in the user's timezone, with a test;
+  - a "yes" in the same chat is confirmed in code;
+  - the check script continues the same chat and takes `--timezone`;
+  - the study-plan prompt fix plus a code-level guard (Docker: 6 of 10 runs with the prompt alone, 10 of 10 with the guard);
+  - a refused repeat plan call isn't listed in `tools_used`.
+- **Offline gate:** pytest 325 passed, ruff clean.
+- **In progress:** nothing. No work is half done.
+- **Next:**
+  1. You rerun `scripts/google_calendar_check.py --email <you> --timezone Asia/Kolkata` (stack on Firebase auth). Expect `+05:30`, 18:00 local, and the event created by the chat "yes".
+  2. You confirm Phase 8.
+  3. Phase 9 starts (needs the Firebase web app config; `FIREBASE_WEB_API_KEY` is already in `.env`).
+- **Known problems / not verified:**
+  - The full Docker agent check (`verify_agent_docker.py`) hasn't been rerun with the final code. It was stopped for time. The study-plan step it used to fail is now covered by the guard, which a 10-run Docker probe confirmed.
+  - The Phase 9 UI should set the user's timezone from the browser at first sign-in. New accounts default to `UTC`.
+  - In Google's Testing mode, the connection expires after 7 days; reconnect before demos.
+  - The local model's plan summaries can be loose (e.g. "1 session per week"). The saved tasks are correct.
 | 10 | Hardening, deployment, docs, CI | 1–9 | Render account and payment method | ⬜ |
 | 11 | *(Optional)* Knowledge graph | 10 | – | ⬜ |
 
