@@ -23,6 +23,7 @@ from sqlalchemy.engine import make_url
 from app.config import Settings, build_postgres_url
 from app.db.models import Base
 from app.main import create_app
+from app.services import background
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -163,6 +164,9 @@ def db_settings(db_url: str, tmp_path) -> Settings:
 def db_app(db_settings: Settings) -> Iterator:
     app = create_app(db_settings)
     yield app
+    # A streamed chat turn finishes (and saves memories) on its own thread: let it end
+    # before wiping tables, or the two deadlock.
+    background.wait_for_all(app)
     # Clean slate for the next test: wipe every table (users cascade to all user data).
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     with app.state.engine.begin() as conn:

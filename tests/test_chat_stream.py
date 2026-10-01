@@ -6,7 +6,9 @@ import uuid
 from langchain_core.messages import AIMessage
 from sqlalchemy import select
 
-from app.db.models import ChatMessage, Goal
+from app.db.models import ChatMessage, Goal, User
+from app.routers.chat import stream_turn
+from app.services import background
 from tests.conftest import auth
 from tests.test_agent import call, script
 
@@ -55,7 +57,9 @@ def test_tool_turn_streams_tool_events_and_saves_everything(db_app, db_client, d
     done = events[-1][1]
     assert done["tools_used"] == ["create_goal"]
     assert db_session.scalar(select(Goal)).title == "Finish ML course"
-    # Messages committed, and memory extraction ran after the stream ended.
+    # Messages committed, and memory extraction ran after the stream ended (on the
+    # turn's own thread).
+    background.wait_for_all(db_app)
     detail = db_client.get(f"/chat/sessions/{done['session_id']}", headers=A).json()
     assert [(m["role"], m["memory_status"]) for m in detail["messages"]] == [
         ("user", "done"),
@@ -122,3 +126,27 @@ def test_checks_happen_before_streaming(db_app, db_client):
     a_session = stream(db_client, A, "hi")[1][-1][1]["session_id"]
     status, events = stream(db_client, B, "hi", session_id=a_session)
     assert status == 404  # B cannot stream into A's session
+
+
+def test_a_turn_finishes_and_is_saved_when_the_client_disconnects(db_app, db_client, db_session):
+    """A Streamlit tab that reruns mid-reply closes the stream; the reply must not be lost."""
+    user_id = uuid.UUID(db_client.get("/me", headers=A).json()["id"])
+    script(
+        db_app, call("create_goal", title="English exam", target_date="2026-10-12"), "Created it."
+    )
+    relay = stream_turn(db_app, user_id, "Add a goal for my English exam on 12 Oct", None)
+    first = next(relay)  # the client reads one event ...
+    assert first.startswith("event: ")
+    relay.close()  # ... and goes away
+    background.wait_for_all(db_app)
+
+    assert db_session.scalar(select(Goal).where(Goal.user_id == user_id)).title == "English exam"
+    messages = db_session.scalars(
+        select(ChatMessage).where(ChatMessage.user_id == user_id).order_by(ChatMessage.created_at)
+    ).all()
+    assert [(m.role, m.content) for m in messages] == [
+        ("user", "Add a goal for my English exam on 12 Oct"),
+        ("assistant", "Created it."),
+    ]
+    assert messages[0].memory_status == "done"
+    assert db_session.get(User, user_id) is not None

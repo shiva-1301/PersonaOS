@@ -7,21 +7,28 @@ from frontend.api_client import ApiClient, ApiError, ApiUnavailable, Unauthorize
 
 CURRENT = "chat_session_id"
 PENDING = "chat_pending_confirmations"
+LAST = "chat_last_reply"  # details of the latest reply, shown under it after the redraw
+# tool -> (what was done, what couldn't be done)
 TOOL_LABELS = {
-    "search_documents": "searched your notes",
-    "list_documents": "listed your documents",
-    "summarize_document": "summarised a document",
-    "create_goal": "created a goal",
-    "list_goals": "looked at your goals",
-    "add_task": "added a task",
-    "update_task": "updated a task",
-    "list_tasks": "looked at your tasks",
-    "generate_study_plan": "made a study plan",
-    "remember_explicit": "saved a memory",
-    "list_calendar_events": "checked your calendar",
-    "create_calendar_event": "proposed a calendar event",
-    "confirm_calendar_event": "added a calendar event",
+    "search_documents": ("searched your notes", "search your notes"),
+    "list_documents": ("listed your documents", "list your documents"),
+    "summarize_document": ("summarised a document", "summarise the document"),
+    "create_goal": ("created a goal", "create the goal"),
+    "list_goals": ("looked at your goals", "look at your goals"),
+    "add_task": ("added a task", "add the task"),
+    "update_task": ("updated a task", "update the task"),
+    "list_tasks": ("looked at your tasks", "look at your tasks"),
+    "generate_study_plan": ("made a study plan", "make the study plan"),
+    "remember_explicit": ("saved a memory", "save that memory"),
+    "list_calendar_events": ("checked your calendar", "check your calendar"),
+    "create_calendar_event": ("proposed a calendar event", "propose the calendar event"),
+    "confirm_calendar_event": ("added a calendar event", "add the calendar event"),
 }
+
+
+def _label(tool: str, ok: bool) -> str:
+    done, failed = TOOL_LABELS.get(tool, (f"used {tool}", f"use {tool}"))
+    return done if ok else f"couldn't {failed}"
 
 
 def _session_picker(api: ApiClient) -> None:
@@ -43,14 +50,20 @@ def _session_picker(api: ApiClient) -> None:
     if choice != st.session_state.get(CURRENT):
         st.session_state[CURRENT] = choice
         st.session_state.pop(PENDING, None)
+        st.session_state.pop(LAST, None)
         st.rerun()
 
 
 def _details(reply: dict) -> None:
+    """What the assistant did for this reply. Failed tools are said to have failed: a
+    failed call changed nothing, so it must never read as done."""
     notes = []
-    if reply.get("tools_used"):
-        done = dict.fromkeys(TOOL_LABELS.get(t, t) for t in reply["tools_used"])
-        notes.append("I " + ", ".join(done) + ".")
+    results = reply.get("tool_results") or [
+        {"tool": t, "ok": True} for t in reply.get("tools_used", [])
+    ]
+    if results:
+        said = dict.fromkeys(_label(r["tool"], r["ok"]) for r in results)
+        notes.append("I " + ", ".join(said) + ".")
     if reply.get("memories_used"):
         notes.append(f"Used {reply['memories_used']} memories about you.")
     if notes:
@@ -98,10 +111,8 @@ def _send(api: ApiClient, message: str) -> None:
                     text = ""  # the model went on to use a tool: discard the draft
                     body.empty()
                 elif event.event == "tool":
-                    label = TOOL_LABELS.get(event.data.get("tool"), event.data.get("tool"))
-                    status.caption(
-                        f"Working… {label}" + ("" if event.data.get("ok") else " (failed)")
-                    )
+                    label = _label(event.data.get("tool", ""), bool(event.data.get("ok")))
+                    status.caption(f"Working… {label}")
                 elif event.event == "done":
                     reply = event.data
         except (Unauthorized, ApiUnavailable):
@@ -112,14 +123,16 @@ def _send(api: ApiClient, message: str) -> None:
             return
         status.empty()
         if reply is None:
-            body.error("The reply was cut off. Please try again.")
+            body.error(
+                "The connection dropped before the reply arrived. The reply is still being "
+                "saved; open the conversation again in a moment."
+            )
             return
-        body.markdown(reply["reply"])
-        _details(reply)
     st.session_state[CURRENT] = reply["session_id"]
     st.session_state[PENDING] = reply.get("pending_confirmations") or []
-    if st.session_state[PENDING]:
-        st.rerun()  # show the confirmation buttons below the conversation
+    st.session_state[LAST] = {"message_id": reply["message_id"], "reply": reply}
+    # Redraw from the saved conversation: no half-replaced elements from the stream.
+    st.rerun()
 
 
 def render() -> None:
@@ -129,10 +142,16 @@ def render() -> None:
 
     current = st.session_state.get(CURRENT)
     if current:
+        last = st.session_state.get(LAST) or {}
+        asked = None  # the user message the next assistant message answers
         for m in api.chat_session(current)["messages"]:
+            if m["role"] == "user":
+                asked = m["id"]
             if m["role"] in ("user", "assistant"):
                 with st.chat_message(m["role"]):
                     st.markdown(m["content"])
+                    if m["role"] == "assistant" and asked == last.get("message_id"):
+                        _details(last["reply"])
     else:
         st.info(
             "Ask anything. PersonaOS remembers what matters about you, searches your "

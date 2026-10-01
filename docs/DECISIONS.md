@@ -490,3 +490,41 @@ Started on the owner's go-ahead while the Phase 8 `--timezone` rerun was still p
   - the API, database and UI are healthy, on `AUTH_PROVIDER=firebase`;
   - the UI container reaches `http://api:8000`, and its native libraries load;
   - `GET /analytics/summary` without a token → 401.
+
+### Phase 9 fix: a study plan for an exam that wasn't a goal yet (2026-10-01, from your UI test)
+You asked for a plan for your English exam on 12 Oct at 5 h/week. What went wrong, and the fix for each:
+- **The plan failed: there was no "English exam" goal.** `generate_study_plan` needs an existing goal and the model never created one, so it got "not found", apologised, and promised "manual" tasks it never added.
+  - Fix: if the named goal doesn't exist, isn't ambiguous and isn't an ID, the tool creates it with `end_date` as the target date, then plans.
+  - With no date, nothing is created and the model is told to ask for the date.
+  - If the plan then fails, the new goal is removed again.
+  - The prompt says to pass agreed days and times as `preferences`, and that a "yes" to the previous proposal counts as asked for in this message.
+- **Wrong weekdays ("Monday, 2026-10-02", which is a Friday).**
+  - Fix: the agent prompt carries a 14-day table of weekday and date ("Thu 2026-10-01 (today)", …) to read from instead of computing.
+- **The app said "I made a study plan" after the tool had failed.** `tools_used` lists every call, including failed ones.
+  - Fix: replies now include `tool_results` (`{"tool", "ok"}`), and the app says "I couldn't make the study plan" for failures.
+  - `tools_used` is unchanged for compatibility.
+- **Messages appeared twice while streaming.** Streamlit shows the previous run's elements until they're replaced.
+  - Fix: after each reply the Chat page redraws from the saved conversation, with that reply's details kept under it.
+- **The second "yes" was lost.** Any click while a reply streams reruns the Streamlit tab, which closes the HTTP stream, and the turn ran inside that stream.
+  - Fix: `/chat/stream` runs the turn on its own thread (`app/services/background.py`) and only relays its events, so a closed stream no longer cancels the turn; it's committed and its memories saved.
+  - Shutdown waits up to 30 s for running turns, and tests wait before cleaning tables.
+- **Prompt changes weren't enough.** Replaying your conversation against qwen2.5:7b in Docker, the plan was made in only 1 of 3 runs. In the others the model wrote schedules as text, and once claimed "I've created the study plan" without calling a tool. So, as with the calendar "yes", the yes to a proposed plan is now carried out in code (`app/agent/plan_confirm.py`):
+  - **When it runs:** only for a clear yes when the assistant's previous message talked about a plan, schedule or sessions.
+  - **What it does:** one narrow JSON-mode call to the planner model reads the last 12 messages and returns `{confirmed, goal, end_date, hours_per_week, preferences}`.
+  - **Checks in code:** hours 0–80, a valid date, the yes must be for the plan, and the goal must not already have a plan.
+  - **Then:** the goal is created if needed and the plan made, through `plan_by_reference`, the same path as the tool.
+  - **The agent's part:** it gets the result in its prompt and isn't offered the plan tool again.
+  - **Fallback:** if anything is missing or unreadable, nothing happens and the agent handles the turn as before.
+  - **Cost:** one extra model call (about 5–15 s locally), only on such yes turns.
+- **Weekdays in tool results.** Dates in tool results now include the weekday ("Fri 2026-10-02 14:00"). In the replay the model wrote "Monday, October 2" when summarising a plan whose dates had no weekday.
+- **Replay with the confirmation path: plan made in 5 of 5 runs.** The model's summary still had wrong weekday/date pairs in 3 of 5: it retold its own proposal ("Monday, 2026-10-02") instead of the saved sessions. Two code fixes:
+  - **A bare yes to a proposed plan gets a template reply** built from the saved sessions ("Fri 2026-10-02 14:00 · Vocabulary …"), with no model call, like the calendar yes. A longer yes still goes to the agent with the note.
+  - **Every saved reply passes through `fix_weekdays` (`app/agent/text_fixes.py`).** A weekday written directly next to an explicit date ("Mon 2026-10-02", "Monday, October 2", "Wednesday 4th October") is recomputed from the date, keeping the model's style. Nothing else changes, and dates without a weekday or impossible dates are left alone.
+  - Streamed tokens are shown raw while the reply arrives; the app then redraws from the saved, corrected text.
+- **False "done" claims after a failed tool.** In 2 of 3 replays the model answered a failed early plan attempt with "I've created a goal…", even though every tool error now ends "(Nothing was changed: don't tell the user it was done.)".
+  - Fix: when every tool in a turn failed and the reply claims something was done ("I've created/added…", "has been created"), the saved reply gets "(Correction: nothing was created or changed yet. I couldn't make the study plan.)" (`flag_false_claims`).
+  - Future-tense replies ("I'll create…") and turns where any tool worked are left alone.
+- **Final replays against qwen2.5:7b, your exact conversation:**
+  - goal and plan created on the "yes" in 8 of 8 runs (two batches of 5 and 3), up from 1 of 3 before the fix;
+  - 0 wrong weekday/date pairs in replies;
+  - each "yes" answered with the template listing the saved sessions.

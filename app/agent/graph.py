@@ -15,6 +15,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.agent.prompts import TOOL_LIMIT_NOTE, Excerpt, build_system_prompt
 from app.agent.state import AgentState
+from app.agent.text_fixes import fix_weekdays, flag_false_claims
 from app.agent.tools import ALL_TOOLS, DUPLICATE_PLAN
 from app.db.models import ChatMessage, ChatSession, User
 from app.services.llm import invoke_with_backoff
@@ -155,6 +156,11 @@ def build_agent_graph(tools=ALL_TOOLS):
         text = reply.content
         if isinstance(text, list):
             text = "".join(b.get("text", "") if isinstance(b, dict) else str(b) for b in text)
+        # Weekdays written next to dates are recomputed (the model gets them wrong), and a
+        # claim of something done after only failed tools gets a correction.
+        today = datetime.now(user_zone(db.get(User, conf["user_id"]).timezone)).date()
+        text = fix_weekdays(str(text), today)
+        text = flag_false_claims(text, state.get("tool_results", []))
         user_msg = ChatMessage(
             session_id=session.id,
             user_id=conf["user_id"],

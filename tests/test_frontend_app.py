@@ -17,7 +17,7 @@ from frontend import session
 from frontend.api_client import ApiClient
 from frontend.firebase_auth import FirebaseSession
 from tests.conftest import auth
-from tests.test_agent import script
+from tests.test_agent import call, script
 
 APP = str(Path(__file__).resolve().parent.parent / "frontend" / "streamlit_app.py")
 A = auth("test-user-a")
@@ -227,3 +227,28 @@ def test_delete_everything_needs_the_exact_phrase(ui):
     at = click(at, "Delete all my data")
     assert 'Type exactly "DELETE MY DATA".' in texts(at)
     assert len(ui.get("/goals", headers=A).json()) == 1
+
+
+def test_chat_says_a_failed_tool_failed_and_shows_the_reply_once(ui, db_app):
+    """The UI used to caption "I made a study plan" when the plan tool had failed."""
+    script(
+        db_app,
+        call("generate_study_plan", goal_id="English exam", hours_per_week=5),
+        "When is your English exam?",
+    )
+    at = app()
+    at.chat_input[0].set_value("plan my english exam").run()
+    assert not at.exception
+    captions = " ".join(c.value for c in at.caption)
+    assert "I couldn't make the study plan." in captions
+    assert "made a study plan" not in captions
+    shown = [m.value for m in at.markdown if m.value == "When is your English exam?"]
+    assert len(shown) == 1  # redrawn from the saved conversation: no duplicate
+
+
+def test_chat_caption_for_a_tool_that_worked(ui, db_app):
+    script(db_app, call("create_goal", title="English exam", target_date="2027-01-12"), "Done!")
+    at = app()
+    at.chat_input[0].set_value("add a goal: English exam on 12 Jan").run()
+    assert "I created a goal." in " ".join(c.value for c in at.caption)
+    assert [g["title"] for g in ui.get("/goals", headers=A).json()] == ["English exam"]

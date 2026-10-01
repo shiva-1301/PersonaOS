@@ -4,7 +4,9 @@ Run with: uvicorn app.main:create_app --factory
 """
 
 import logging
+from contextlib import asynccontextmanager
 
+import anyio.to_thread
 from fastapi import FastAPI
 
 from app.auth.jwt_verify import build_verifier
@@ -25,10 +27,20 @@ from app.routers import (
     tasks,
     users,
 )
+from app.services import background
 from app.services.container import Services
 from app.services.llm import chat_model_name, memory_model_settings
 
 logger = logging.getLogger(__name__)
+
+SHUTDOWN_GRACE_SECONDS = 30
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    # Chat turns whose client went away still finish and save (up to a limit).
+    await anyio.to_thread.run_sync(background.wait_for_all, app, SHUTDOWN_GRACE_SECONDS)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -42,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Interactive docs are handy locally but not exposed in production.
         docs_url=None if settings.APP_ENV == "production" else "/docs",
         redoc_url=None,
+        lifespan=_lifespan,
     )
     app.state.settings = settings
     # The engine connects lazily, so creating it never blocks startup.

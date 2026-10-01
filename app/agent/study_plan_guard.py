@@ -136,8 +136,10 @@ def system_note(result: dict) -> str:
     sessions = "; ".join(
         f"{s['due']} {s['title']} ({s['minutes']} min)" for s in result["sessions"]
     )
+    created = f"{result['goal_created']}, created just now. " if result.get("goal_created") else ""
     return (
-        f'The study plan the user asked for was ALREADY created for goal "{result["goal"]}": '
+        created
+        + f'The study plan the user asked for was ALREADY created for goal "{result["goal"]}": '
         f"{result['sessions_created']} sessions from {result['first']} to {result['last']}. "
         f"Sessions: {sessions}. Adjustments: {result['adjustments'] or 'none'}. "
         "Summarise this plan for the user briefly, using only these facts. Do not call "

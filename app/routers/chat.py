@@ -1,13 +1,14 @@
 import json
 import logging
+import queue
 import time
 import uuid
+from collections.abc import Iterator
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_core.exceptions import ModelRateLimitError
 from sqlalchemy import select, update
-from starlette.background import BackgroundTask
 
 from app.agent.runner import run_agent_turn, stream_agent_turn
 from app.db.models import ChatMessage, ChatSession, User
@@ -21,6 +22,7 @@ from app.schemas.chat import (
     SessionOut,
     SourceOut,
 )
+from app.services import background as background_threads
 from app.services.chat_service import SessionNotFound, get_owned_session, run_chat_turn
 from app.services.llm import LLMConfigError
 
@@ -83,6 +85,7 @@ def _chat_out(turn) -> ChatOut:
             for s in turn.sources
         ],
         tools_used=turn.tools_used,
+        tool_results=turn.tool_results,
         pending_confirmations=turn.pending_confirmations,
     )
 
@@ -152,19 +155,34 @@ def chat_stream(body: ChatIn, request: Request, user: CurrentUser, db: DbSession
     - `tool` {"tool", "ok"}: a tool call finished
     - `done`: the same JSON body as POST /chat
     - `error` {"error": {"code", "message"}}: the turn failed; nothing was saved
-    """
-    app = request.app
-    services = app.state.services
+
+    The turn runs to the end even if the client disconnects, and is saved."""
+    services = request.app.state.services
     _check_length(services, body.message)
     if body.session_id is not None:  # fail fast with a normal 404 before streaming
         try:
             get_owned_session(db, user.id, body.session_id)
         except SessionNotFound:
             raise HTTPException(status.HTTP_404_NOT_FOUND, SESSION_NOT_FOUND) from None
-    user_id, message, session_id = user.id, body.message, body.session_id
-    finished: dict = {}
+    return StreamingResponse(
+        stream_turn(request.app, user.id, body.message, body.session_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
-    def events():
+
+def stream_turn(
+    app, user_id: uuid.UUID, message: str, session_id: uuid.UUID | None
+) -> Iterator[str]:
+    """Start the turn on its own thread and relay its events as SSE text.
+
+    Closing the returned iterator (a browser tab that reruns or closes mid-reply) only
+    stops the relay: the turn still finishes, is committed, and its memories are saved."""
+    services = app.state.services
+    events: queue.Queue = queue.Queue()
+
+    def run_turn() -> None:
+        turn = None
         # Own DB session: the request's session is closed once streaming starts.
         with app.state.session_factory() as stream_db:
             try:
@@ -173,28 +191,27 @@ def chat_stream(body: ChatIn, request: Request, user: CurrentUser, db: DbSession
                     stream_db, stream_user, message, session_id, services
                 ):
                     if event == "done":
-                        finished["turn"] = data
-                        yield _sse("done", _chat_out(data).model_dump(mode="json"))
+                        turn = data
+                        events.put(("done", _chat_out(data).model_dump(mode="json")))
                     else:
-                        yield _sse(event, data)
+                        events.put((event, data))
             except Exception as exc:
                 stream_db.rollback()
                 err = _error_for(exc)
                 code = {404: "not_found", 502: "upstream_error", 503: "service_unavailable"}
-                yield _sse("error", error_body(code.get(err.status_code, "error"), err.detail))
+                events.put(("error", error_body(code.get(err.status_code, "error"), err.detail)))
+            finally:
+                events.put(None)  # end of stream
+        if turn is not None:
+            save_turn_in_background(app, user_id, turn.user_message_id, _extraction_input(message))
 
-    def after_stream():
-        if "turn" in finished:
-            save_turn_in_background(
-                app, user_id, finished["turn"].user_message_id, _extraction_input(message)
-            )
+    background_threads.start(app, run_turn, name="chat-turn")
 
-    return StreamingResponse(
-        events(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        background=BackgroundTask(after_stream),
-    )
+    def relay() -> Iterator[str]:
+        while (item := events.get()) is not None:
+            yield _sse(*item)
+
+    return relay()
 
 
 @router.get("/sessions", response_model=list[SessionOut])

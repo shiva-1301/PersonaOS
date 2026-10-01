@@ -43,6 +43,8 @@ class ChatTurn:
     memories_used: int
     sources: list[Source]
     tools_used: list[str] = field(default_factory=list)
+    # The same tools with their outcome: {"tool": name, "ok": bool}.
+    tool_results: list[dict] = field(default_factory=list)
     # Calendar proposals created this turn, waiting for the user's confirmation.
     pending_confirmations: list[dict] = field(default_factory=list)
 

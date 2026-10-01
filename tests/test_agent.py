@@ -413,7 +413,7 @@ def test_study_plan_is_created_at_most_once_per_message(db_app, db_client, db_se
     )
     chat(db_client, A, "plan it, 6 hours a week")
     second = last_tool_result(model.prompts[2])
-    assert second == {"error": "A plan was already created for this goal in this message."}
+    assert second["error"].startswith("A plan was already created for this goal in this message.")
     titles = [
         t.title
         for t in db_session.scalars(select(Task).where(Task.goal_id == uuid.UUID(goal["id"])))
@@ -475,3 +475,97 @@ def test_same_title_for_two_users_always_resolves_to_the_callers_own_item(
     assert plan_count(goals["a"]) == 0  # A's same-titled goal untouched
     assert db_client.get(f"/tasks/{tasks['b']['id']}", headers=B).json()["status"] == "done"
     assert db_client.get(f"/tasks/{tasks['a']['id']}", headers=A).json()["status"] == "todo"
+
+
+# --------------------------------------------------------------------------- plans for new goals
+
+
+def _in_days(n: int) -> str:
+    return (datetime.now(UTC) + timedelta(days=n)).date().isoformat()
+
+
+def test_plan_for_a_goal_the_user_doesnt_have_yet_creates_it(db_app, db_client, db_session):
+    """What happened in the UI: "plan my English exam (12 Oct)" with no goal -> not found."""
+    db_app.state.services.planner_model = FakeChatModel()
+    exam = _in_days(11)
+    model = script(
+        db_app,
+        call(
+            "generate_study_plan",
+            goal_id="English exam",
+            hours_per_week=5,
+            end_date=exam,
+            preferences="Mon 14:00-16:00, Wed 15:00-17:00, Fri 13:00-15:00",
+        ),
+        "Done.",
+    )
+    body = chat(db_client, A, "yes")
+    result = last_tool_result(model.prompts[1])
+    goal = db_session.scalar(select(Goal))
+    assert goal.title == "English exam" and goal.target_date.isoformat() == exam
+    assert "English exam" in result["goal_created"] and result["sessions_created"] >= 1
+    tasks = db_session.scalars(select(Task).where(Task.goal_id == goal.id)).all()
+    assert len(tasks) == result["sessions_created"]
+    assert body["tool_results"] == [{"tool": "generate_study_plan", "ok": True}]
+
+
+def test_plan_for_a_new_goal_without_a_date_asks_for_it(db_app, db_client, db_session):
+    model = script(
+        db_app, call("generate_study_plan", goal_id="English exam", hours_per_week=5), "When?"
+    )
+    body = chat(db_client, A, "plan my english exam")
+    error = last_tool_result(model.prompts[1])["error"]
+    assert "no goal called" in error and "end_date" in error
+    assert "Nothing was changed" in error
+    assert db_session.scalars(select(Goal)).all() == []
+    # A failed tool is reported as failed, not as done.
+    assert body["tool_results"] == [{"tool": "generate_study_plan", "ok": False}]
+
+
+def test_plan_never_creates_a_goal_for_an_ambiguous_name_or_an_unknown_id(
+    db_app, db_client, db_session
+):
+    db_client.post("/goals", json={"title": "English exam reading"}, headers=A)
+    db_client.post("/goals", json={"title": "English exam writing"}, headers=A)
+    for ref in ("English exam", "11111111-2222-3333-4444-555555555555"):
+        script(
+            db_app,
+            call("generate_study_plan", goal_id=ref, hours_per_week=5, end_date=_in_days(11)),
+            "?",
+        )
+        chat(db_client, A, "plan it")
+    assert len(db_session.scalars(select(Goal)).all()) == 2
+
+
+def test_a_new_goal_is_removed_again_if_its_plan_fails(db_app, db_client, db_session):
+    model = script(
+        db_app,
+        call("generate_study_plan", goal_id="Old exam", hours_per_week=5, end_date="2020-01-01"),
+        "Sorry.",
+    )
+    chat(db_client, A, "plan my old exam")
+    assert "error" in last_tool_result(model.prompts[1])
+    assert db_session.scalars(select(Goal)).all() == []
+
+
+def test_agent_prompt_lists_upcoming_dates_with_their_weekdays():
+    from app.agent.prompts import build_system_prompt
+
+    prompt = build_system_prompt([], now=datetime(2026, 10, 1, 12, 0), agent=True)
+    assert "Thu 2026-10-01 (today)" in prompt
+    assert "Fri 2026-10-02 (tomorrow)" in prompt
+    assert "Mon 2026-10-05" in prompt and "Wed 2026-10-14" in prompt
+    assert "Upcoming dates" not in build_system_prompt([], now=datetime(2026, 10, 1))
+
+
+def test_a_claim_after_a_failed_tool_is_corrected_in_the_saved_reply(db_app, db_client):
+    script(
+        db_app,
+        call("generate_study_plan", goal_id="English exam", hours_per_week=5),
+        "I've created a goal for your English exam on 2026-10-12.",
+    )
+    body = chat(db_client, A, "5 hours a week")
+    assert body["tool_results"] == [{"tool": "generate_study_plan", "ok": False}]
+    assert body["reply"].endswith("I couldn't make the study plan.)")
+    saved = db_client.get(f"/chat/sessions/{body['session_id']}", headers=A).json()
+    assert saved["messages"][-1]["content"] == body["reply"]

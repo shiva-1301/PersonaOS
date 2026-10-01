@@ -25,6 +25,11 @@ class SourceOut(BaseModel):
     chunk_index: int
 
 
+class ToolResultOut(BaseModel):
+    tool: str
+    ok: bool
+
+
 class ChatOut(BaseModel):
     session_id: uuid.UUID
     # The user message of this turn; poll GET /chat/sessions/{id} for its memory_status.
@@ -36,6 +41,8 @@ class ChatOut(BaseModel):
     sources: list[SourceOut] = []
     # Names of the tools the agent used for this reply, in order (empty in plain mode).
     tools_used: list[str] = []
+    # The same tools with whether each one worked; failed calls changed nothing.
+    tool_results: list[ToolResultOut] = []
     # Calendar events proposed this turn: created only after the user confirms (reply
     # "yes" or POST /integrations/google/proposals/{id}/confirm).
     pending_confirmations: list[dict] = []

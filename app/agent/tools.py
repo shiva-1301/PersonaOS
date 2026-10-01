@@ -57,6 +57,14 @@ class ToolError(Exception):
     """Expected failure; its message is returned to the model as the tool result."""
 
 
+class NoMatch(ToolError):
+    """A reference matched none (or, if `ambiguous`, several) of the user's rows."""
+
+    def __init__(self, message: str, *, ambiguous: bool):
+        super().__init__(message)
+        self.ambiguous = ambiguous
+
+
 # --------------------------------------------------------------------------- plumbing
 
 
@@ -80,6 +88,10 @@ def _json(data: Any) -> str:
     return text
 
 
+# Appended to every tool error: small models otherwise report failed actions as done.
+NOTHING_CHANGED = "(Nothing was changed: don't tell the user it was done.)"
+
+
 def _logged(fn: Callable) -> Callable:
     """Log tool name, duration and outcome; turn ToolError into a readable result."""
 
@@ -91,7 +103,7 @@ def _logged(fn: Callable) -> Callable:
             return fn(*args, **kwargs)
         except ToolError as exc:
             outcome = "rejected"
-            return _json({"error": str(exc)})
+            return _json({"error": f"{exc} {NOTHING_CHANGED}"})
         except Exception:
             outcome = "error"
             raise
@@ -116,7 +128,8 @@ def _uuid(value: str, what: str) -> uuid.UUID:
 
 
 def _local(dt: datetime | None, tz) -> str | None:
-    return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M") if dt else None
+    # With the weekday: models copy it instead of working it out (and getting it wrong).
+    return dt.astimezone(tz).strftime("%a %Y-%m-%d %H:%M") if dt else None
 
 
 def _task_view(t: Task, tz) -> dict:
@@ -166,11 +179,12 @@ def _resolve(db, user: User, model, ref: str, label: str, id_key: str, name_attr
         {id_key: str(r.id), name_attr: getattr(r, name_attr)} for r in (matches or rows)[:10]
     ]
     if not options:
-        raise ToolError(f"{label} not found. The user has no {label.lower()}s.")
+        raise NoMatch(f"{label} not found. The user has no {label.lower()}s.", ambiguous=False)
     hint = "Several match" if len(matches) > 1 else f"No {label.lower()} matches that"
-    raise ToolError(
+    raise NoMatch(
         f"{label} not found ({hint}). Nothing was changed. Retry the same tool with "
-        f"{id_key} set to one of these values, or ask the user: {json.dumps(options)}"
+        f"{id_key} set to one of these values, or ask the user: {json.dumps(options)}",
+        ambiguous=len(matches) > 1,
     )
 
 
@@ -407,24 +421,96 @@ def generate_study_plan(
     preferences: str | None = None,
 ) -> str:
     """Create dated study sessions (saved as tasks) for a goal. goal_id comes from
-    list_goals (the goal's title also works); hours_per_week is required. Dates are
-    optional YYYY-MM-DD: start defaults to today, end to the goal's target date, so
-    don't ask the user for them."""
+    list_goals; the goal's title also works. If the user has no such goal yet, pass its
+    title and end_date (e.g. the exam date) and the goal is created. hours_per_week is
+    required. Dates are YYYY-MM-DD: start defaults to today, end to the goal's target
+    date. preferences: days/times agreed with the user, e.g. "Mon 14:00-16:00"."""
     with _context(config) as (db, user, services):
-        goal = _goal(db, user, goal_id)
         return _json(
-            plan_for_goal(
+            plan_by_reference(
                 db,
                 user,
                 services,
-                goal,
                 config,
+                goal_id,
                 hours_per_week,
                 start_date=start_date,
                 end_date=end_date,
                 preferences=preferences,
             )
         )
+
+
+def plan_by_reference(
+    db,
+    user: User,
+    services,
+    config: RunnableConfig,
+    goal_ref: str,
+    hours_per_week: float,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    preferences: str | None = None,
+) -> dict:
+    """Plan for a goal named by id or title, creating the goal if the user has none by
+    that name (see _goal_for_plan). Shared by the tool and the runner's plan guards."""
+    goal, created = _goal_for_plan(db, user, goal_ref, end_date)
+    try:
+        result = plan_for_goal(
+            db,
+            user,
+            services,
+            goal,
+            config,
+            hours_per_week,
+            start_date=start_date,
+            end_date=end_date,
+            preferences=preferences,
+        )
+    except ToolError:
+        if created:  # no half-done work: the new goal goes if its plan failed
+            db.delete(goal)
+            db.commit()
+        raise
+    if created:
+        result["goal_created"] = f'New goal "{goal.title}" (target {goal.target_date})'
+    return result
+
+
+def _goal_for_plan(db, user: User, ref: str, end_date: str | None) -> tuple[Goal, bool]:
+    """(goal, created). A plan for a goal the user doesn't have yet creates it, named
+    after `ref`, with end_date as its target. Never on an ambiguous name or an unknown
+    id, and never without a date (the model must ask for it first)."""
+    try:
+        return _goal(db, user, ref), False
+    except NoMatch as exc:
+        title = (ref or "").strip()
+        if exc.ambiguous or not title or _is_uuid(title):
+            raise
+        if not end_date:
+            raise ToolError(
+                f'The user has no goal called "{title}" yet and no end_date was given. If the '
+                "user already said the date (e.g. the exam date), call generate_study_plan again "
+                "with end_date=YYYY-MM-DD now; otherwise ask them for it."
+            ) from None
+        try:
+            target = date.fromisoformat(end_date)
+        except ValueError:
+            raise ToolError('end_date must be "YYYY-MM-DD"') from None
+        goal = Goal(user_id=user.id, title=title[:200], target_date=target)
+        db.add(goal)
+        db.commit()
+        db.refresh(goal)
+        return goal, True
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 DUPLICATE_PLAN = "A plan was already created for this goal in this message."

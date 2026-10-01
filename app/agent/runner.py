@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,11 +19,14 @@ from app.agent.confirmations import (
     reply_text,
     system_note,
 )
+from app.agent.plan_confirm import plan_if_confirmed
+from app.agent.plan_confirm import reply_text as plan_reply
 from app.agent.study_plan_guard import plan_if_clearly_requested
 from app.agent.study_plan_guard import system_note as plan_note
 from app.db.models import CalendarProposal, ChatMessage, ChatSession, User
 from app.services.chat_service import ChatTurn, Source, _recent_history, get_owned_session
 from app.services.container import Services
+from app.services.time_utils import user_zone
 
 logger = logging.getLogger(__name__)
 
@@ -100,29 +103,45 @@ def _confirm_previous_proposals(
     return outcomes
 
 
-def _guard_study_plan(user: User, message: str, config: dict) -> list[dict]:
-    """A clear study-plan request is planned in code before the model runs
-    (agent/study_plan_guard.py); the model is told the result. Returns tool results."""
+def _guard_study_plan(
+    user: User, message: str, config: dict, history: list[BaseMessage]
+) -> tuple[list[dict], dict | None]:
+    """Study plans the model would likely fumble are made in code before it runs: a clear
+    request (agent/study_plan_guard.py), or a yes to a plan it just proposed
+    (agent/plan_confirm.py). The model is told the result.
+
+    Returns (tool results, the plan if it was made from a confirmation)."""
     conf = config["configurable"]
     services = conf["services"]
     # Its own session and transaction, like a tool call.
     with services.session_factory() as tool_db:
-        result = plan_if_clearly_requested(
-            tool_db, tool_db.get(User, user.id), services, message, config
-        )
+        tool_user = tool_db.get(User, user.id)
+        result = plan_if_clearly_requested(tool_db, tool_user, services, message, config)
+        confirmed_plan = None
+        if result is None:
+            now = datetime.now(user_zone(tool_user.timezone))
+            result = plan_if_confirmed(tool_db, tool_user, services, history, message, config, now)
+            if result is not None and "error" not in result:
+                confirmed_plan = result
     if result is None:
-        return []
+        return [], None
     conf["system_note"] = "\n\n".join(filter(None, [conf.get("system_note"), plan_note(result)]))
     conf["hidden_tools"] = {PLAN_TOOL}  # the model only describes the plan
-    return [{"tool": PLAN_TOOL, "ok": "error" not in result}]
+    return [{"tool": PLAN_TOOL, "ok": "error" not in result}], confirmed_plan
 
 
 def _answer_directly(
-    db: Session, user: User, session: ChatSession, message: str, config: dict, outcomes
+    db: Session,
+    user: User,
+    session: ChatSession,
+    message: str,
+    config: dict,
+    reply: str,
+    tool_results: list[dict],
 ) -> ChatTurn:
-    """A bare yes: the reply is a template, no model call. Saved like any other turn."""
+    """A bare yes that code already carried out: the reply is a template built from
+    what was really done, no model call. Saved like any other turn."""
     asked_at = config["configurable"]["asked_at"]
-    reply = reply_text(outcomes, user.timezone)
     user_msg = ChatMessage(
         session_id=session.id,
         user_id=user.id,
@@ -152,7 +171,19 @@ def _answer_directly(
         reply=reply,
         memories_used=0,
         sources=[],
-        tools_used=[CONFIRM_TOOL] * len(outcomes),
+        tools_used=[r["tool"] for r in tool_results],
+        tool_results=tool_results,
+    )
+
+
+def _with_early(turn: ChatTurn, early: list[dict]) -> ChatTurn:
+    """Put tools run in code before the model (a confirmed yes, the plan guard) first."""
+    if not early:
+        return turn
+    return replace(
+        turn,
+        tools_used=[r["tool"] for r in early] + turn.tools_used,
+        tool_results=early + turn.tool_results,
     )
 
 
@@ -180,6 +211,7 @@ def _finish(session: ChatSession, final: dict[str, Any], started: float) -> Chat
             for c in final.get("retrieved_chunks", [])
         ],
         tools_used=tools_used,
+        tool_results=list(results),
     )
 
 
@@ -195,15 +227,18 @@ def run_agent_turn(
     confirmed = _confirm_previous_proposals(
         db, user, session, message, config, existing=session_id is not None
     )
+    early = [{"tool": CONFIRM_TOOL, "ok": o.created} for o in confirmed]
     if confirmed and is_bare_yes(message):
-        return _answer_directly(db, user, session, message, config, confirmed)
-    early = [CONFIRM_TOOL] * len(confirmed)
-    early += [r["tool"] for r in _guard_study_plan(user, message, config)]
+        reply = reply_text(confirmed, user.timezone)
+        return _answer_directly(db, user, session, message, config, reply, early)
+    results, plan = _guard_study_plan(user, message, config, graph_input["messages"][:-1])
+    early += results
+    if plan and is_bare_yes(message):
+        reply = plan_reply(plan, user.timezone)
+        return _answer_directly(db, user, session, message, config, reply, early)
     final = services.agent_graph.invoke(graph_input, config=config)
     db.commit()  # chat messages (and the new session) in one transaction
-    turn = _finish(session, final, started)
-    if early:
-        turn = replace(turn, tools_used=early + turn.tools_used)
+    turn = _with_early(_finish(session, final, started), early)
     turn.pending_confirmations.extend(
         _pending_confirmations(db, user.id, config["configurable"]["asked_at"])
     )
@@ -235,17 +270,26 @@ def stream_agent_turn(
     confirmed = _confirm_previous_proposals(
         db, user, session, message, config, existing=session_id is not None
     )
-    for outcome in confirmed:
-        yield "tool", {"tool": CONFIRM_TOOL, "ok": outcome.created}
+    early = [{"tool": CONFIRM_TOOL, "ok": o.created} for o in confirmed]
+    for result in early:
+        yield "tool", result
     if confirmed and is_bare_yes(message):
-        turn = _answer_directly(db, user, session, message, config, confirmed)
+        reply = reply_text(confirmed, user.timezone)
+        turn = _answer_directly(db, user, session, message, config, reply, early)
         yield "token", {"text": turn.reply}
         yield "done", turn
         return
-    early = [CONFIRM_TOOL] * len(confirmed)
-    for result in _guard_study_plan(user, message, config):
-        early.append(result["tool"])
+    results, plan = _guard_study_plan(user, message, config, graph_input["messages"][:-1])
+    for result in results:
+        early.append(result)
         yield "tool", result
+    if plan and is_bare_yes(message):
+        turn = _answer_directly(
+            db, user, session, message, config, plan_reply(plan, user.timezone), early
+        )
+        yield "token", {"text": turn.reply}
+        yield "done", turn
+        return
     final: dict[str, Any] = {}
     streamed = False
     for mode, chunk in services.agent_graph.stream(
@@ -275,9 +319,7 @@ def stream_agent_turn(
                         yield "tool", result
                 final.update(update)
     db.commit()
-    turn = _finish(session, final, started)
-    if early:
-        turn = replace(turn, tools_used=early + turn.tools_used)
+    turn = _with_early(_finish(session, final, started), early)
     turn.pending_confirmations.extend(
         _pending_confirmations(db, user.id, config["configurable"]["asked_at"])
     )

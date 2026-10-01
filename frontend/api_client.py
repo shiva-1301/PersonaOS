@@ -123,6 +123,7 @@ class ChatReply(TypedDict):
     memory_status: str
     sources: list[Source]
     tools_used: list[str]
+    tool_results: list[dict]  # {"tool", "ok"}: a failed tool changed nothing
     pending_confirmations: list[dict]
 
 
