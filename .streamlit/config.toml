@@ -1,0 +1,10 @@
+# Used when running the UI locally from the project root (Docker sets the same via env).
+[browser]
+gatherUsageStats = false
+# Setting the address also stops Streamlit looking up your public IP at startup.
+serverAddress = "localhost"
+
+[server]
+headless = true
+# The API's own limit is MAX_UPLOAD_MB (10); the UI explains anything up to this size.
+maxUploadSize = 25

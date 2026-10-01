@@ -50,11 +50,16 @@ def google_http_error(exc: Exception) -> HTTPException:
     return HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
 
 
-def _page(title: str, message: str, code: int = 200) -> HTMLResponse:
+def _page(title: str, message: str, code: int = 200, back: str | None = None) -> HTMLResponse:
+    link = (
+        f"<p><a href='{html.escape(back, quote=True)}/integrations'>Back to PersonaOS</a></p>"
+        if back
+        else ""
+    )
     body = (
         "<!doctype html><meta charset='utf-8'><title>PersonaOS</title>"
         "<body style='font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem'>"
-        f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p></body>"
+        f"<h1>{html.escape(title)}</h1><p>{html.escape(message)}</p>{link}</body>"
     )
     return HTMLResponse(body, status_code=code)
 
@@ -74,20 +79,27 @@ def callback(
     error: str | None = None,
 ) -> HTMLResponse:
     google = request.app.state.services.google
+    back = request.app.state.settings.FRONTEND_ORIGIN.rstrip("/")
     if google is None:
         return _page("Not available", "Google integration is not configured.", 503)
     try:
         user_id = google.consume_state(db, state)  # the user who started the flow
     except InvalidState as exc:
-        return _page("Link expired", str(exc) + " Start the connection again.", 400)
+        return _page("Link expired", str(exc) + " Start the connection again.", 400, back)
     if error or not code:
-        return _page("Not connected", "Google access was not granted. You can try again.", 400)
+        return _page(
+            "Not connected", "Google access was not granted. You can try again.", 400, back
+        )
     try:
         google.complete(db, user_id, code)
     except GoogleError:
         logger.warning("Google code exchange failed")
-        return _page("Not connected", "Google could not complete the connection. Try again.", 502)
-    return _page("Google Calendar connected", "You can close this tab and return to PersonaOS.")
+        return _page(
+            "Not connected", "Google could not complete the connection. Try again.", 502, back
+        )
+    return _page(
+        "Google Calendar connected", "You can close this tab and return to PersonaOS.", back=back
+    )
 
 
 @router.get("/status")

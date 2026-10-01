@@ -416,3 +416,77 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
 - Waiting for your rerun of `google_calendar_check.py --timezone Asia/Kolkata`.
 - **Phase 9:** not started. Nothing is in progress or half done.
 - **Not verified with the final code:** the full Docker agent check, which was stopped for time. Offline: 325 passed, ruff clean.
+
+## Phase 9: analytics endpoint and Streamlit UI (2026-10-01)
+Started on the owner's go-ahead while the Phase 8 `--timezone` rerun was still pending.
+
+### Analytics
+- **`GET /analytics/summary`** (`days` 7–90, default 30; `weeks` 4–52, default 12) returns:
+  - completions per day and per week;
+  - the last-7-days total;
+  - the current and longest streak;
+  - task counts (todo, doing, done, overdue, due soon);
+  - progress per goal;
+  - memories by state.
+- **All SQL aggregates, every query filtered by `user_id`.**
+- **Days and weeks are the user's local calendar.** Postgres computes `timezone(users.timezone, completed_at)`, so a task done at 00:30 IST counts for that IST day. Weeks start on Monday, matching `due=this_week`.
+- **The streak may end yesterday:** today isn't over, so an unbroken run up to yesterday still counts. "Longest" looks back 365 days.
+- **"Due soon" = not done, due within the next 48 hours.** "Overdue" = not done, due before now. Both are the simplest useful definitions.
+- **Goal progress reuses `progress_for`,** so the ratio is rounded to 4 decimals, as in `GET /goals`.
+
+### Frontend
+- **Layout:**
+  - `frontend/api_client.py`: a typed client (TypedDicts) that turns failures into `ApiUnavailable`, `Unauthorized`, `PayloadTooLarge` or `ApiError`, keeping the API's own message.
+  - `frontend/firebase_auth.py`: Firebase Auth REST.
+  - `frontend/charts.py`: pure Plotly figure functions.
+  - `frontend/session.py`: Streamlit glue.
+  - One module per page in `frontend/views/`.
+  - Pages are registered with `st.navigation`.
+- **Login:** Firebase REST from the Streamlit server (`accounts:signInWithPassword`, `accounts:signUp`, `accounts:sendOobCode`, `securetoken` refresh, `accounts:delete`).
+  - Tokens live only in `st.session_state` and are refreshed 2 minutes before expiry.
+  - A refresh failure or any 401 signs out with "Your session expired".
+  - The reset form doesn't reveal whether an account exists.
+- **Timezone at first sign-in:** if the profile is still on the UTC default and the browser reports another zone (`st.context.timezone`), the UI sets it once. A zone the user chose is never overwritten, and the sidebar can change it.
+- **Friendly errors:**
+  - an unreachable API shows "Can't reach the PersonaOS API … start it with `.\scripts\up.ps1`" and a **Try again** button;
+  - a 401 returns to sign-in;
+  - a file over the limit is caught in the browser before upload, and a 413 shows the limit.
+- **Times are shown in the profile's timezone, not the Streamlit server's** (UTC in Docker).
+- **Chat:**
+  - streams over `/chat/stream`; a `reset` event discards the draft text;
+  - shows tools used, memories used and sources;
+  - shows a proposed calendar event with **Add / Don't add** buttons as well as the "yes" reply path.
+- **Documents:** the list refreshes every 3 s while something is processing (an `st.fragment` with `run_every`) and stops once all are ready.
+- **Delete everything:** the Memory page deletes all data (exact phrase required) and optionally the Firebase login.
+  - Firebase only deletes a login after a recent sign-in, so the UI checks `auth_time` from the token first and refuses before deleting anything.
+  - `PRIVACY.md` is updated.
+- **Charts** follow the data-viz reference palette:
+  - completions are one series in blue, with no legend;
+  - goal progress is meters (a same-ramp track plus fill);
+  - memory states are a donut with the first four categorical slots in fixed order, so a state keeps its colour when others are empty;
+  - direct labels plus a legend, separate light and dark steps (from the Streamlit theme), and a "Show data" table under each chart.
+- **Google connect** uses `st.link_button` to Google's consent page, because Streamlit can't open a tab from the server. The callback page now links back to `FRONTEND_ORIGIN/integrations`.
+
+### Packaging and Docker
+- **Pins** (`frontend/requirements.txt`, included by `requirements-dev.txt`): Streamlit 1.64.0, Plotly 7.1.0, pandas 3.0.5, pyarrow 24.0.0.
+- **Smart App Control:**
+  - pandas 3.0.6 had `pandas._libs.join` blocked; 3.0.5 loads every module.
+  - pyarrow 25.0.1 had its Parquet-encryption modules blocked; 24.0.0 loads everything.
+  - Checked by importing every compiled pandas/pyarrow module.
+- **A `frontend` compose service** builds from `frontend/` (the API image is unchanged).
+  - It gets only `API_URL=http://api:8000`, `FIREBASE_WEB_API_KEY` and `MAX_UPLOAD_MB`, with no `env_file`, so no secrets.
+  - It's bound to `127.0.0.1:8501` and starts after the API is healthy.
+  - Health check: `/_stcore/health`.
+  - Streamlit usage stats and the public-IP lookup at startup are off, and so is the file watcher.
+- **`up.ps1`** waits for both the API and the UI and prints http://localhost:8501.
+
+### Verification
+- **Offline: 382 tests:**
+  - 9 analytics tests: local-day boundaries in Kolkata vs UTC, weeks, streaks, overdue/due soon, goals, memory, isolation, bounds.
+  - 18 client tests: error mapping, SSE parsing, and a contract test running the real API in-process through `ApiClient`.
+  - 12 Firebase tests and 4 chart tests.
+  - 13 headless UI tests (Streamlit AppTest against the real API): login, sign-in, wrong password, expired session → login, API down, timezone sync, chat streaming, creating a goal, generating a plan, dashboard metrics and charts, the empty pages, and delete-everything with and without the exact phrase.
+- **Docker:**
+  - the API, database and UI are healthy, on `AUTH_PROVIDER=firebase`;
+  - the UI container reaches `http://api:8000`, and its native libraries load;
+  - `GET /analytics/summary` without a token → 401.

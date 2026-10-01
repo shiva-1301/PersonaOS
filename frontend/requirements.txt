@@ -1,0 +1,9 @@
+# Streamlit frontend (pinned; verified together with `pip check`).
+streamlit==1.64.0
+plotly==7.1.0
+# pandas 3.0.6's native join module and pyarrow 25.0.1's Parquet-encryption modules are
+# blocked by Windows Smart App Control; these versions load completely (see DECISIONS.md).
+pandas==3.0.5
+pyarrow==24.0.0
+httpx==0.28.1
+python-dotenv==1.2.3

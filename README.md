@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 8 (Google Calendar)**. What is stored and how to delete it: [docs/PRIVACY.md](docs/PRIVACY.md). See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 9 (web UI and dashboard)**. What is stored and how to delete it: [docs/PRIVACY.md](docs/PRIVACY.md). See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -20,9 +20,10 @@ pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 # Edit .env and set POSTGRES_PASSWORD (any strong local password)
 
-# 3. Run the stack (API + Postgres)
+# 3. Run the stack (API + Postgres + web UI)
 .\scripts\up.ps1            # or: docker compose up --build -d
 curl.exe http://localhost:8000/health    # -> {"status":"ok"}
+# Open the app: http://localhost:8501  (sign up / sign in with Firebase email + password)
 
 # 4. Tests and lint
 .\scripts\test.ps1
@@ -34,6 +35,29 @@ curl.exe http://localhost:8000/health    # -> {"status":"ok"}
 
 Database migrations run automatically when the `api` container starts. From the host: `alembic upgrade head` (or `alembic downgrade base`).
 Tests need Postgres running (`docker compose up -d postgres`). They use a separate `personaos_test` database, which they create themselves.
+
+### The web app
+
+Open http://localhost:8501 after `.\scripts\up.ps1`. Create an account or sign in (Firebase email and password; `FIREBASE_WEB_API_KEY` must be in `.env`). The pages are:
+
+- **Chat:** streamed replies with tools, memories used and sources. Proposed calendar events get Add / Don't add buttons.
+- **Documents:** upload PDF, DOCX or TXT (up to 10 MB), summaries and search.
+- **Goals & Tasks:** goals with progress, study-plan generation, and tasks you can tick off.
+- **Dashboard:** your streak, completions per day or week, goal progress and memory states.
+- **Memory:** what is remembered. Forget one memory, or delete everything (optionally your login too).
+- **Integrations:** connect Google Calendar, confirm proposed events, see the next 7 days.
+
+At first sign-in your timezone is taken from the browser; change it in the sidebar.
+
+Run the UI outside Docker (the API still on port 8000):
+```powershell
+.venv\Scripts\streamlit.exe run frontend\streamlit_app.py
+```
+
+The dashboard's data is also available from the API:
+```powershell
+Invoke-RestMethod "http://localhost:8000/analytics/summary?days=30&weeks=12" -Headers $h
+```
 
 ### Live tests and model checks
 
@@ -132,7 +156,7 @@ API docs (dev only): http://localhost:8000/docs
 
 ```
 app/        FastAPI app (config, routers, services, agent, jobs, db, auth)
-frontend/   Streamlit UI (Phase 9)
+frontend/   Streamlit UI (api_client.py, firebase_auth.py, charts.py, views/)
 tests/      pytest suite (no real API keys needed)
 scripts/    PowerShell helpers
 docs/       Spec, plan, decisions

@@ -1,4 +1,4 @@
-# Build and start the stack in the background, then wait for /health.
+# Build and start the stack in the background, then wait for the API and the UI.
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 if (-not (Test-Path .env)) {
@@ -7,11 +7,17 @@ if (-not (Test-Path .env)) {
 docker compose up --build -d
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-for ($i = 0; $i -lt 30; $i++) {
-    try {
-        $r = Invoke-RestMethod -Uri http://localhost:8000/health -TimeoutSec 2
-        Write-Host "API healthy:" ($r | ConvertTo-Json -Compress)
-        exit 0
-    } catch { Start-Sleep -Seconds 2 }
+function Wait-Url($url, $name, $logs) {
+    for ($i = 0; $i -lt 45; $i++) {
+        try {
+            $null = Invoke-WebRequest -Uri $url -TimeoutSec 2 -UseBasicParsing
+            Write-Host "$name ready: $url"
+            return
+        } catch { Start-Sleep -Seconds 2 }
+    }
+    Write-Error "$name did not become healthy. Check: docker compose logs $logs"
 }
-Write-Error "API did not become healthy. Check: docker compose logs api"
+
+Wait-Url "http://127.0.0.1:8000/health" "API" "api"
+Wait-Url "http://127.0.0.1:8501/_stcore/health" "UI" "frontend"
+Write-Host "Open PersonaOS: http://localhost:8501"

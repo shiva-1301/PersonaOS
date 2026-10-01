@@ -14,6 +14,7 @@ from app.errors import register_error_handlers
 from app.logging_config import setup_logging
 from app.middleware import RequestIdMiddleware, UploadSizeLimitMiddleware
 from app.routers import (
+    analytics,
     chat,
     documents,
     goals,
@@ -61,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(goals.router)
     app.include_router(tasks.router)
     app.include_router(memory.router)
+    app.include_router(analytics.router)
     app.include_router(integrations.router)
     app.include_router(internal.router)
 

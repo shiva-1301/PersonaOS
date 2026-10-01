@@ -41,6 +41,20 @@ services:
       postgres:
         condition: service_healthy
 
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    # Only what the UI needs: no database password, Google secret or encryption key.
+    environment:
+      API_URL: http://api:8000
+      FIREBASE_WEB_API_KEY: ${FIREBASE_WEB_API_KEY:-}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   pg_data:
   chroma_data:

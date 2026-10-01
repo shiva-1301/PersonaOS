@@ -22,6 +22,12 @@ Google access is limited to your calendar events (`calendar.events`). PersonaOS 
 
 Models run locally by default (Ollama), so prompts don't leave your machine. If you configure a cloud model such as Gemini, your messages and the relevant memories and excerpts are sent to that provider. On free tiers the provider may use them, so use only non-sensitive data there.
 
+## The web app
+
+- The Streamlit app keeps your Firebase ID token and refresh token only in your browser tab's session on the Streamlit server. They aren't written to disk or logged, and signing out clears them.
+- The UI container gets only the API address and the Firebase web API key. It has no database password, Google secret or encryption key.
+- Dashboard numbers (`GET /analytics/summary`) are computed when you open the page. Nothing extra is stored.
+
 ## How memories change over time
 
 - Memories you don't use fade: **active → stale → archived**. Archived memories are kept but no longer used in answers.
@@ -51,7 +57,7 @@ Events already in your Google Calendar stay there: they're yours, in your Google
 
 The response lists how much was deleted from each store. This is verified by tests that check every store is empty for the deleted user and unchanged for everyone else.
 
-Your Firebase login isn't deleted by this call. Delete it from the app (Phase 9 adds the button). If you sign in again before that, you start with a new, empty account.
+`DELETE /me/data` doesn't delete your Firebase login. In the app, **Memory → Delete everything → "Also delete my login"** deletes both. Firebase only allows that within a few minutes of signing in; the app checks this before deleting anything. If you keep the login and sign in again, you start with a new, empty account.
 
 ## Retention
 
