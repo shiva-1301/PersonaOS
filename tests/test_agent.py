@@ -437,3 +437,40 @@ def test_persistently_empty_model_gets_a_clear_fallback(db_app, db_client):
     script(db_app, "")
     body = chat(db_client, A, "hello?")
     assert body["reply"] == "Sorry, I couldn't produce an answer just now. Please try again."
+
+
+def test_same_title_for_two_users_always_resolves_to_the_callers_own_item(
+    db_app, db_client, db_session
+):
+    """A and B both have a goal "Finish ML course" and a task "Read chapter 3". Whoever
+    refers to them by title gets their OWN row; the other user's row is never touched."""
+    target = (datetime.now(UTC) + timedelta(days=27)).date().isoformat()
+    goals, tasks = {}, {}
+    for who, headers in (("a", A), ("b", B)):
+        goals[who] = db_client.post(
+            "/goals", json={"title": "Finish ML course", "target_date": target}, headers=headers
+        ).json()
+        tasks[who] = db_client.post(
+            "/tasks", json={"title": "Read chapter 3"}, headers=headers
+        ).json()
+    db_app.state.services.planner_model = FakeChatModel()
+
+    # B: plan by goal TITLE, mark task done by task TITLE.
+    script(
+        db_app,
+        call("generate_study_plan", goal_id="Finish ML course", hours_per_week=6),
+        call("update_task", task_id="Read chapter 3", status="done"),
+        "done",
+    )
+    body = chat(db_client, B, "plan my ML course and mark reading done")
+    assert body["tools_used"] == ["generate_study_plan", "update_task"]
+
+    def plan_count(goal):
+        return len(
+            db_session.scalars(select(Task).where(Task.goal_id == uuid.UUID(goal["id"]))).all()
+        )
+
+    assert plan_count(goals["b"]) >= 3  # B's goal got the plan
+    assert plan_count(goals["a"]) == 0  # A's same-titled goal untouched
+    assert db_client.get(f"/tasks/{tasks['b']['id']}", headers=B).json()["status"] == "done"
+    assert db_client.get(f"/tasks/{tasks['a']['id']}", headers=A).json()["status"] == "todo"
