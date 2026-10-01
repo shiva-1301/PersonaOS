@@ -54,8 +54,9 @@ def main() -> int:
         print("    Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TOKEN_ENCRYPTION_KEY in .env, then")
         print("    docker compose up -d   (recreates the api with the new settings)")
         return check.result()
+    # The callback answers with an HTML page, so only the status code is checked.
     bad = http("GET", "/integrations/google/callback?state=forged&code=x")[0]
-    check(bad == 400, "a forged OAuth state is rejected")
+    check(bad == 400, f"a forged OAuth state is rejected (HTTP {bad})")
 
     if not status["connected"]:
         print("\n1-2. Connect Google Calendar")

@@ -53,13 +53,22 @@ def upload(path: Path, token: str):
 
 
 def _send(req):
+    """(status, body): body is parsed JSON, the raw text if it isn't JSON (e.g. an
+    HTML page), or None when empty."""
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
-            raw = resp.read()
-            return resp.status, json.loads(raw) if raw else None
+            return resp.status, _decode(resp.read())
     except urllib.error.HTTPError as exc:
-        raw = exc.read()
-        return exc.code, json.loads(raw) if raw else None
+        return exc.code, _decode(exc.read())
+
+
+def _decode(raw: bytes):
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return raw.decode("utf-8", errors="replace")
 
 
 def wait_healthy(timeout: float = 180) -> float:
