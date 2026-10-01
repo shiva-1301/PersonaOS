@@ -554,3 +554,11 @@ You asked for a plan for your English exam on 12 Oct at 5 h/week. What went wron
   - the account pill out of place;
   - chat bubbles overflowing;
   - the 0% progress bar not showing.
+
+### Phase 9: smoothness and mobile pass (2026-10-01, owner request)
+- **Motion layer** in `frontend/style.py`: buttons lift on hover and press down on tap; nav pills, tabs and expanders get quiet highlight transitions; cards and metric tiles rise under the pointer; the hero fades up; the sign-in pills drift; the goal-meter fill glides; the chat input gets a coral focus ring. Hover effects sit behind `@media (hover: hover)` so touch devices never get stuck hover states, and `prefers-reduced-motion: reduce` turns every animation and transition off.
+- **Frosted sticky header.** Chat opens scrolled to the newest message, and scrolled content used to collide with the transparent fixed header. The header now gets translucent paper with a blur and a hairline. Streamlit's own emotion styles outrank plain attribute selectors, so the rules use `header[data-testid=...]` / `div[data-testid=...]`; a DOM probe (computed styles over the DevTools protocol) confirmed they apply.
+- **Toasts, not banners.** Flash messages (`session.flash`) now show as `st.toast`: nothing shifts and they dismiss themselves. Errors stay inline.
+- **Charts read, they don't pan.** The Plotly mode bar is off, axes are `fixedrange`, and scroll/double-click zoom are disabled (`charts.PLOTLY_CONFIG`) - on phones a stray drag used to zoom the chart instead of scrolling the page. The dashboard's Day/Week control lost its stray "Per" label.
+- **Phone layout (<= 640px):** tighter page padding and card radii, smaller hero and nav pills, wider chat bubbles, and the account pill shrinks to the person icon so it clears the collapsed nav. The aura background scrolls with the page on phones (fixed backgrounds repaint per frame there) and stays fixed from 900px up.
+- **Verified** with headless screenshots at 1440px and 390x844 for sign-in, chat (scrolled), dashboard and goals, plus the DOM probe for the header; 427 tests and ruff stay green.

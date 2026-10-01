@@ -46,6 +46,9 @@ DARK = Theme(
     track="#104281",
 )
 FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif'
+# No mode-bar toolbar, no scroll/pinch zoom: charts read, they don't pan. This matters
+# on phones, where a stray drag would otherwise zoom the chart instead of the page.
+PLOTLY_CONFIG = {"displayModeBar": False, "scrollZoom": False, "doubleClick": False}
 MEMORY_STATES = ("active", "stale", "archived", "superseded")
 
 
@@ -65,13 +68,16 @@ def _layout(fig: go.Figure, t: Theme, *, height: int) -> go.Figure:
         bargap=0.25,
         barcornerradius=4,
     )
-    fig.update_xaxes(showgrid=False, linecolor=t.baseline, tickfont={"color": t.muted})
+    fig.update_xaxes(
+        showgrid=False, linecolor=t.baseline, tickfont={"color": t.muted}, fixedrange=True
+    )
     fig.update_yaxes(
         gridcolor=t.grid,
         gridwidth=1,
         zeroline=False,
         tickfont={"color": t.muted},
         rangemode="tozero",
+        fixedrange=True,
     )
     return fig
 

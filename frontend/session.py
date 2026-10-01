@@ -79,8 +79,9 @@ def flash(message: str) -> None:
 
 
 def show_flash() -> None:
+    # Toasts rather than banners: nothing shifts, and they dismiss themselves.
     for message in st.session_state.pop(FLASH, []):
-        st.success(message)
+        st.toast(message, icon=":material/check_circle:")
 
 
 def attempt(fn, *args, **kwargs):

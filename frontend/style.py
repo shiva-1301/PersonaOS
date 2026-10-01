@@ -3,8 +3,9 @@
 The theme sets colours, fonts, radii and pill buttons. This adds what the theme can't:
 the aura behind each page, serif hero headlines with an italic accent, mono tag pills,
 chat bubbles, card styling (st.container(key="card-…") gets the class "st-key-card-…"),
-and a coral accent. Only Streamlit's stable hooks are targeted: data-testid attributes
-and st-key-* classes.
+a coral accent, the motion layer (hover lifts, press feedback, focus rings, entrance
+fades — all disabled for people who turn motion off) and the phone layout. Only
+Streamlit's stable hooks are targeted: data-testid attributes and st-key-* classes.
 """
 
 import html
@@ -29,19 +30,64 @@ _CSS = """
   --accent: #ff5b35;
   --bubble: #dfe8ff;
   --shadow: 0 1px 2px rgba(28, 27, 34, 0.04), 0 8px 24px rgba(28, 27, 34, 0.06);
+  --shadow-hover: 0 2px 4px rgba(28, 27, 34, 0.05), 0 14px 34px rgba(28, 27, 34, 0.10);
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
+html { scroll-behavior: smooth; }
 
-/* Page: warm paper with a soft aura at the top. */
+/* Page: warm paper with a soft aura at the top. The aura scrolls with the page on
+   phones (fixed backgrounds repaint on every scroll frame there) and stays put on
+   larger screens. */
 [data-testid="stApp"] {
   background:
     radial-gradient(52rem 24rem at 50% -7rem, var(--aura-blue), transparent 70%),
     radial-gradient(34rem 20rem at 14% -3rem, var(--aura-violet), transparent 72%),
     radial-gradient(34rem 20rem at 88% -2rem, var(--aura-pink), transparent 72%),
     var(--paper);
-  background-attachment: fixed;
 }
-[data-testid="stHeader"] { background: transparent; }
-[data-testid="stMainBlockContainer"] { padding-top: 4.5rem; max-width: 72rem; }
+@media (min-width: 900px) {
+  [data-testid="stApp"] { background-attachment: fixed; }
+}
+/* The fixed header frosts over whatever scrolls beneath it, so the logo and nav stay
+   readable on a scrolled page (chat opens scrolled to the newest message). The element
+   names raise specificity above Streamlit's own emotion rules. */
+header[data-testid="stHeader"] {
+  background: rgba(246, 243, 238, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(28, 27, 34, 0.06);
+}
+div[data-testid="stMainBlockContainer"] { padding-top: 4.6rem; max-width: 72rem; }
+
+/* Scrollbars: slim and quiet. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #d6d1c6;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: #b9b4a8; }
+
+/* Buttons: lift on hover, press down on tap. (Hover only where a pointer exists.) */
+[data-testid^="stBaseButton"],
+a[data-testid^="stBaseLinkButton"] {
+  transition: transform 0.15s var(--ease), box-shadow 0.2s var(--ease),
+    background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+@media (hover: hover) {
+  [data-testid^="stBaseButton"]:hover:not(:disabled),
+  a[data-testid^="stBaseLinkButton"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(28, 27, 34, 0.16);
+  }
+}
+[data-testid^="stBaseButton"]:active:not(:disabled),
+a[data-testid^="stBaseLinkButton"]:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
+}
 
 /* Top navigation as a pill bar; the current page is an ink pill. */
 [data-testid="stTopNavLink"] {
@@ -49,11 +95,19 @@ _CSS = """
   padding: 0.3rem 0.95rem;
   font-size: 0.86rem;
   color: var(--ink-2);
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+@media (hover: hover) {
+  [data-testid="stTopNavLink"]:hover:not([aria-current="page"]) {
+    background: rgba(28, 27, 34, 0.07);
+    color: var(--ink);
+  }
 }
 [data-testid="stTopNavLink"][aria-current="page"] { background: var(--ink); color: #fff; }
 [data-testid="stTopNavLink"][aria-current="page"] * { color: #fff; }
 
-/* Hero: mono tag pill, serif headline with an italic accent, quiet subtitle. */
+/* Hero: mono tag pill, serif headline with an italic accent, quiet subtitle.
+   The pieces rise in softly, one after another. */
 .pos-hero { position: relative; text-align: center; padding: 1.5rem 0 1.25rem; }
 .pos-hero::before {
   content: "";
@@ -68,7 +122,17 @@ _CSS = """
   pointer-events: none;
   z-index: 0;
 }
-.pos-hero > * { position: relative; z-index: 1; }
+.pos-hero > * {
+  position: relative;
+  z-index: 1;
+  animation: pos-rise 0.45s var(--ease) both;
+}
+.pos-hero .pos-title { animation-delay: 0.05s; }
+.pos-hero .pos-sub { animation-delay: 0.1s; }
+@keyframes pos-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
 .pos-hero.left { text-align: left; padding-top: 0.25rem; }
 .pos-hero.left::before { display: none; }
 .pos-title {
@@ -112,7 +176,7 @@ _CSS = """
   padding: 0.25rem 0.75rem;
 }
 
-/* Floating labels on the sign-in page (decorative; hidden on small screens). */
+/* Floating labels on the sign-in page: drifting gently (hidden on small screens). */
 .pos-floats { position: relative; height: 0; }
 .pos-float {
   position: absolute;
@@ -127,18 +191,30 @@ _CSS = """
   padding: 0.45rem 0.9rem;
   box-shadow: var(--shadow);
   white-space: nowrap;
+  animation: pos-bob 7s ease-in-out infinite alternate;
+}
+.pos-float:nth-child(2) { animation-delay: -2s; }
+.pos-float:nth-child(3) { animation-delay: -4s; }
+.pos-float:nth-child(4) { animation-delay: -6s; }
+@keyframes pos-bob {
+  from { transform: translateY(-4px); }
+  to { transform: translateY(5px); }
 }
 .pos-float.coral { background: #ffd9cc; border-color: #ffc3b0; }
 .pos-float.blue { background: var(--bubble); border-color: #c9d7ff; }
 @media (max-width: 900px) { .pos-floats { display: none; } }
 
-/* Cards: st.container(key="card-…"). */
+/* Cards: st.container(key="card-…"), rising slightly under the pointer. */
 [class*="st-key-card"] {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 20px;
   padding: 1.1rem 1.2rem;
   box-shadow: var(--shadow);
+  transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease);
+}
+@media (hover: hover) {
+  [class*="st-key-card"]:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
 }
 [class*="st-key-auth"] {
   background: rgba(255, 255, 255, 0.86);
@@ -158,7 +234,22 @@ _CSS = """
 }
 [class*="st-key-auth"] [data-testid="stForm"] { background: none; border: 0; box-shadow: none; }
 
-/* Goal meter: a slim same-hue track with the done share (matches the dashboard). */
+/* Expanders and tabs: quiet highlights instead of jumps. */
+[data-testid="stExpander"] summary {
+  border-radius: 12px;
+  transition: background-color 0.15s ease;
+}
+@media (hover: hover) {
+  [data-testid="stExpander"] summary:hover { background: rgba(28, 27, 34, 0.04); }
+}
+[data-testid="stTab"] { transition: color 0.15s ease; }
+[data-testid="stTab"] p { font-size: 0.92rem; }
+[data-testid="stTabs"] [aria-selected="true"] p { color: var(--ink); font-weight: 600; }
+
+/* Dataframes: rounded like the cards. */
+[data-testid="stDataFrame"] { border-radius: 12px; overflow: hidden; }
+
+/* Goal meter: a slim same-hue track; the fill glides to its new width. */
 .pos-meter { display: flex; align-items: center; gap: 0.75rem; margin: 0.35rem 0 0.2rem; }
 .pos-meter-track {
   flex: 1;
@@ -167,7 +258,12 @@ _CSS = """
   background: #dbe7fb;
   overflow: hidden;
 }
-.pos-meter-fill { height: 100%; border-radius: 999px; background: #2a78d6; }
+.pos-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #2a78d6;
+  transition: width 0.6s var(--ease);
+}
 .pos-meter-label { font-size: 0.82rem; color: var(--ink-2); min-width: 5.5rem; text-align: right; }
 
 /* Metrics as tiles with a small uppercase label. */
@@ -177,6 +273,10 @@ _CSS = """
   border-radius: 20px;
   padding: 1rem 1.15rem 0.9rem;
   box-shadow: var(--shadow);
+  transition: box-shadow 0.25s var(--ease), transform 0.25s var(--ease);
+}
+@media (hover: hover) {
+  [data-testid="stMetric"]:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
 }
 [data-testid="stMetricLabel"] p {
   font-size: 0.72rem;
@@ -210,17 +310,31 @@ _CSS = """
 [data-testid="stChatInput"] {
   border-radius: 999px;
   box-shadow: var(--shadow);
+  transition: box-shadow 0.2s ease;
+}
+[data-testid="stChatInput"]:focus-within {
+  box-shadow: 0 0 0 3px rgba(255, 91, 53, 0.22), var(--shadow-hover);
 }
 [data-testid="stChatInputSubmitButton"] {
   background: var(--accent);
   border-radius: 999px;
   color: #fff;
+  transition: transform 0.15s var(--ease), background-color 0.2s ease;
 }
+@media (hover: hover) {
+  [data-testid="stChatInputSubmitButton"]:hover:not(:disabled) { transform: scale(1.08); }
+}
+[data-testid="stChatInputSubmitButton"]:active:not(:disabled) { transform: scale(0.95); }
 [data-testid="stChatInputSubmitButton"]:disabled { background: #f3c4b6; }
 
-/* Tabs: underline in ink, quieter labels. */
-[data-testid="stTab"] p { font-size: 0.92rem; }
-[data-testid="stTabs"] [aria-selected="true"] p { color: var(--ink); font-weight: 600; }
+/* Toasts (saved / created / deleted notices): small white cards, bottom right. */
+[data-testid="stToast"] {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(28, 27, 34, 0.16);
+}
+[data-testid="stToast"], [data-testid="stToast"] * { color: var(--ink); }
 
 /* Account menu: a pill in the top bar, right side (like the nav's call to action). */
 [class*="st-key-account"] {
@@ -236,6 +350,34 @@ _CSS = """
   border-color: var(--ink);
 }
 [class*="st-key-account"] button * { color: #fff; }
+
+/* Phones: tighter rhythm, same look. */
+@media (max-width: 640px) {
+  div[data-testid="stMainBlockContainer"] { padding: 4.4rem 1rem 5.5rem; }
+  .pos-hero { padding: 0.9rem 0 0.8rem; }
+  .pos-title { font-size: clamp(2.1rem, 11vw, 2.9rem); }
+  .pos-hero.left .pos-title { font-size: 1.9rem; }
+  .pos-sub { font-size: 0.95rem; }
+  [data-testid="stTopNavLink"] { padding: 0.25rem 0.7rem; font-size: 0.82rem; }
+  [class*="st-key-card"] { padding: 0.9rem 1rem; border-radius: 16px; }
+  [class*="st-key-auth"] { padding: 1.1rem 1rem 0.9rem; border-radius: 18px; }
+  [data-testid="stMetric"] { padding: 0.75rem 0.9rem 0.65rem; border-radius: 16px; }
+  [data-testid="stChatMessage"] { padding: 0.7rem 0.8rem; border-radius: 16px; }
+  [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) { width: 94%; }
+  /* The account pill shrinks to the person icon, clear of the collapsed nav. */
+  [class*="st-key-account"] { top: 0.5rem; right: 2.9rem; }
+  [class*="st-key-account"] button [data-testid="stMarkdownContainer"] { display: none; }
+  [class*="st-key-account"] button { padding-left: 0.55rem; padding-right: 0.55rem; }
+}
+
+/* People who turn animation off get none, anywhere. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, ::before, ::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
 </style>
 """
 

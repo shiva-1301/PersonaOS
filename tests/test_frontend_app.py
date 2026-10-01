@@ -80,7 +80,7 @@ def view(name: str) -> AppTest:
 
 def texts(at: AppTest) -> str:
     parts = []
-    for kind in ("title", "markdown", "caption", "info", "success", "warning", "error"):
+    for kind in ("title", "markdown", "caption", "info", "success", "warning", "error", "toast"):
         parts += [str(e.value) for e in getattr(at, kind)]
     return "\n".join(parts + hero_html(at))
 

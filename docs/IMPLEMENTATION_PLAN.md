@@ -71,27 +71,19 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 | 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | 🟨 Calendar verified 1 Oct 2026; follow-up fixes (timezone, "yes" in code, study-plan guard) committed, awaiting your rerun of the manual check (Drive/Gmail not built) |
 | 9 | Analytics API and Streamlit dashboard | 5, 6, 7 | Firebase web app config | 🟨 Built, awaiting your UI walkthrough (started on your go-ahead with Phase 8's rerun still pending) |
 
-### Where things stand (1 Oct 2026)
+### Where things stand (1 Oct 2026, evening)
 
-- **Done:** Phases 1–7, plus Phase 8 Calendar. Your first manual Google check passed, and the follow-ups are committed.
-- **Phase 9:** built and tested offline. The stack runs it in Docker at http://localhost:8501, on Firebase auth. It includes:
-  - `GET /analytics/summary`;
-  - the Streamlit UI (Chat, Documents, Goals & Tasks, Dashboard, Memory, Integrations);
-  - Firebase sign-in, sign-up and password reset;
-  - your timezone taken from the browser at first sign-in;
-  - "delete my login" alongside "delete all my data".
-- **Offline gate:** pytest 382 passed, ruff clean.
+- **Done:** Phases 1-7; Phase 8 Calendar (your manual check passed; the --timezone rerun is still open). Phase 9 is built: the analytics endpoint, the Streamlit app, the "Aura" design, and the smoothness/mobile pass (motion layer with reduced-motion support, frosted sticky header, toasts, touch-safe charts, phone layout).
+- **Docker regressions, final code: all five PASS** (memory, documents, planner, agent - study plan via the code guard - and lifecycle with the cron secret). Container on Firebase auth.
+- **Offline gate:** pytest 427 passed, ruff clean.
 - **Next:**
-  1. You verify Phase 9 using only the UI (steps in the Phase 9 report).
-  2. Optionally, rerun `scripts/google_calendar_check.py --email <you> --timezone Asia/Kolkata` for Phase 8.
-  3. Phase 10 after you confirm.
-- **Known problems / not verified:**
-  - The Phase 8 manual rerun (`--timezone`) hasn't been reported yet. You chose to start Phase 9 first.
-  - The full Docker agent check (`verify_agent_docker.py`) hasn't been rerun with the latest agent code. It was stopped for time.
-  - The UI hasn't been driven with your real Firebase login by me; that needs your password. It was tested headless (Streamlit AppTest) against the real API with fake auth.
-  - In Google's Testing mode, the connection expires after 7 days; reconnect before demos.
-  - The local model's plan summaries can be loose (e.g. "1 session per week"). The saved tasks are correct.
-  - Streamlit has no native "open in new tab" redirect. Connecting Google uses a link button, then **Refresh** on the Integrations page.
+  1. You walk through Phase 9 in the UI (and optionally rerun `scripts/google_calendar_check.py --email <you> --timezone Asia/Kolkata` for Phase 8).
+  2. Phase 10 (hardening, deployment, docs, CI) after you confirm.
+- **Known limits:**
+  - The UI hasn't been driven with your real Firebase login by me; it was verified headless against the real API with fake auth, plus screenshots at 1440px and 390px.
+  - In Google's Testing mode the connection expires after 7 days; reconnect before demos.
+  - The local model's wording can be loose; tool results, saved tasks and the code guards are what's authoritative.
+  - Connecting Google uses a link button plus Refresh (Streamlit can't open tabs itself).
 
 | 10 | Hardening, deployment, docs, CI | 1–9 | Render account and payment method | ⬜ |
 | 11 | *(Optional)* Knowledge graph | 10 | – | ⬜ |

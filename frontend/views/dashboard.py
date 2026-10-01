@@ -35,11 +35,22 @@ def render() -> None:
         st.caption("Finish a task today to keep your streak going.")
 
     st.subheader("Tasks completed")
-    weekly = st.segmented_control("Per", ["Day", "Week"], default="Day", required=True) == "Week"
+    weekly = (
+        st.segmented_control(
+            "Shown per",
+            ["Day", "Week"],
+            default="Day",
+            required=True,
+            label_visibility="collapsed",
+        )
+        == "Week"
+    )
     points = data["completions_per_week"] if weekly else data["completions_per_day"]
     if any(p["completed"] for p in points):
         st.plotly_chart(
-            charts.completions_figure(points, weekly=weekly, dark=dark), width="stretch"
+            charts.completions_figure(points, weekly=weekly, dark=dark),
+            width="stretch",
+            config=charts.PLOTLY_CONFIG,
         )
     else:
         st.info("No completed tasks in this period yet. Tick off a task and it shows up here.")
@@ -50,7 +61,11 @@ def render() -> None:
     with left:
         st.subheader("Goal progress")
         if data["goals"]:
-            st.plotly_chart(charts.goals_figure(data["goals"], dark=dark), width="stretch")
+            st.plotly_chart(
+                charts.goals_figure(data["goals"], dark=dark),
+                width="stretch",
+                config=charts.PLOTLY_CONFIG,
+            )
             with st.expander("Show data"):
                 st.dataframe(
                     [
@@ -71,7 +86,9 @@ def render() -> None:
         st.subheader("Memory")
         if sum(data["memory_by_state"].values()):
             st.plotly_chart(
-                charts.memory_figure(data["memory_by_state"], dark=dark), width="stretch"
+                charts.memory_figure(data["memory_by_state"], dark=dark),
+                width="stretch",
+                config=charts.PLOTLY_CONFIG,
             )
             with st.expander("Show data"):
                 st.dataframe(
