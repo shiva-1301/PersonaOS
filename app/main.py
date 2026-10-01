@@ -13,7 +13,17 @@ from app.db.session import make_engine, make_session_factory
 from app.errors import register_error_handlers
 from app.logging_config import setup_logging
 from app.middleware import RequestIdMiddleware, UploadSizeLimitMiddleware
-from app.routers import chat, documents, goals, health, internal, memory, tasks, users
+from app.routers import (
+    chat,
+    documents,
+    goals,
+    health,
+    integrations,
+    internal,
+    memory,
+    tasks,
+    users,
+)
 from app.services.container import Services
 from app.services.llm import chat_model_name, memory_model_settings
 
@@ -51,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(goals.router)
     app.include_router(tasks.router)
     app.include_router(memory.router)
+    app.include_router(integrations.router)
     app.include_router(internal.router)
 
     mem = memory_model_settings(settings)

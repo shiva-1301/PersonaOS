@@ -8,9 +8,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.messages import HumanMessage
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ChatSession, User
+from app.db.models import CalendarProposal, ChatSession, User
 from app.services.chat_service import ChatTurn, Source, _recent_history, get_owned_session
 from app.services.container import Services
 
@@ -54,6 +55,20 @@ def _prepare(
     return session, graph_input, config
 
 
+def _pending_confirmations(db: Session, user_id, since) -> list[dict]:
+    rows = db.scalars(
+        select(CalendarProposal).where(
+            CalendarProposal.user_id == user_id,
+            CalendarProposal.status == "pending",
+            CalendarProposal.created_at >= since,
+        )
+    )
+    return [
+        {"proposal_id": str(p.id), "title": p.title, "start_at": p.start_at, "end_at": p.end_at}
+        for p in rows
+    ]
+
+
 def _finish(session: ChatSession, final: dict[str, Any], started: float) -> ChatTurn:
     results = final.get("tool_results", [])
     tools_used = [r["tool"] for r in results]
@@ -92,7 +107,11 @@ def run_agent_turn(
     started = time.perf_counter()
     final = services.agent_graph.invoke(graph_input, config=config)
     db.commit()  # chat messages (and the new session) in one transaction
-    return _finish(session, final, started)
+    turn = _finish(session, final, started)
+    turn.pending_confirmations.extend(
+        _pending_confirmations(db, user.id, config["configurable"]["asked_at"])
+    )
+    return turn
 
 
 def _text(content) -> str:
@@ -146,4 +165,8 @@ def stream_agent_turn(
                         yield "tool", result
                 final.update(update)
     db.commit()
-    yield "done", _finish(session, final, started)
+    turn = _finish(session, final, started)
+    turn.pending_confirmations.extend(
+        _pending_confirmations(db, user.id, config["configurable"]["asked_at"])
+    )
+    yield "done", turn

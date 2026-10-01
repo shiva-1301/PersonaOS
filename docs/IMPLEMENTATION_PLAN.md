@@ -67,8 +67,8 @@ Use **fake, non-sensitive data only** on free LLM tiers, because providers may u
 | 4 | Document upload, parsing, RAG, summaries | 3 | Sample PDF, DOCX, TXT (non-sensitive) | ✅ Verified 1 Oct 2026 |
 | 5 | Goals, tasks, study-plan generator | 2 (+3 for LLM) | – | ✅ Verified 1 Oct 2026 (with order/spacing fix) |
 | 6 | LangGraph agent with tools | 3, 4, 5 | – | ✅ Verified 1 Oct 2026 |
-| 7 | Memory lifecycle, supersession, privacy endpoints | 3, 6 | `CRON_SECRET` | 🟨 Built, awaiting your verification |
-| 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | ⬜ |
+| 7 | Memory lifecycle, supersession, privacy endpoints | 3, 6 | `CRON_SECRET` | ✅ Verified 1 Oct 2026 |
+| 8 | Google OAuth and Calendar (Drive/Gmail optional) | 6 | GCP project, OAuth client, `TOKEN_ENCRYPTION_KEY` | 🟨 Calendar built, awaiting your verification (Drive/Gmail not built) |
 | 9 | Analytics API and Streamlit dashboard | 5, 6, 7 | Firebase web app config | ⬜ |
 | 10 | Hardening, deployment, docs, CI | 1–9 | Render account and payment method | ⬜ |
 | 11 | *(Optional)* Knowledge graph | 10 | – | ⬜ |

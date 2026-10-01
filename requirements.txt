@@ -23,6 +23,8 @@ langchain-ollama==1.1.0
 mem0ai==2.2.1
 # Agent (Phase 6)
 langgraph==1.2.12
+# Google OAuth + Calendar REST calls (Phase 8)
+httpx==0.28.1
 chromadb==1.5.9
 # Documents (Phase 4): uploads, PDF/DOCX parsing, text encoding detection.
 python-multipart==0.0.32

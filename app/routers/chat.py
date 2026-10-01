@@ -83,6 +83,7 @@ def _chat_out(turn) -> ChatOut:
             for s in turn.sources
         ],
         tools_used=turn.tools_used,
+        pending_confirmations=turn.pending_confirmations,
     )
 
 

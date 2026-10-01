@@ -44,6 +44,7 @@ class Services:
             "memory",
             "rag",
             "agent_graph",
+            "google",
         ):
             self._cache[name] = value
         else:
@@ -96,3 +97,13 @@ class Services:
         from app.agent.graph import build_agent_graph  # late import: graph imports services
 
         return self._get("agent_graph", build_agent_graph)
+
+    @property
+    def google(self):
+        """GoogleService, or None when Google isn't configured (the app still runs)."""
+        from app.services.google_service import GoogleService, google_configured
+
+        return self._get(
+            "google",
+            lambda: GoogleService(self.settings) if google_configured(self.settings) else None,
+        )

@@ -334,3 +334,45 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
   - deleting one memory removed its vector and SQLite history;
   - `DELETE /me/data` → **every store zero for A** (including Chroma chunks and Mem0 SQLite), and B unchanged and still recalled.
 - **Not yet verified:** the cron success path in Docker, until `CRON_SECRET` is set in `.env`. It's covered offline.
+
+## Phase 8: Google Calendar (2026-10-01)
+
+| Decision | Reason |
+|---|---|
+| **Plain HTTPS (httpx 0.28.1, now pinned) to Google's OAuth and Calendar REST endpoints** (`app/services/google_client.py`), not `google-api-python-client`. | Four calls are needed (consent URL, code exchange, refresh, revoke) plus two Calendar calls. Fewer dependencies, and the whole client can be tested against a fake Google server (`httpx.MockTransport`). |
+| **Scope:** only `https://www.googleapis.com/auth/calendar.events` (create and read events). Consent URL uses `access_type=offline` and `prompt=consent` so a refresh token is always issued, including on reconnect. | Least privilege. Drive and Gmail (8B, optional) were not built. |
+| **Refresh tokens are Fernet-encrypted with `TOKEN_ENCRYPTION_KEY`** before storage (`google_tokens.encrypted_refresh_token`). Access tokens live only in memory per user until shortly before expiry. Tokens and the client secret **never appear in URLs, logs, error messages or API responses**: the token endpoint and revocation receive them in the POST body, and the Calendar API in the `Authorization` header. A test scans all log records for them. | Your requirement and handoff §8. |
+| **The OAuth `state` is bound to the verified user and single-use:** `/start` (logged in) stores a random nonce in `oauth_states` (user_id, expires in 10 minutes) and sends Google a Fernet-encrypted `{nonce, user_id}`. `/callback` (a browser redirect, so no PersonaOS login) accepts only a state that decrypts (and is ≤ 10 minutes old), whose nonce exists **for that same user** and hasn't expired, and then deletes it. The user comes from the state, never from request parameters. | CSRF and account mix-up protection (handoff Phase 8). PKCE isn't documented for Google's web-server flow, so it's not used; the client secret plus the single-use state protects the exchange. |
+| **`/start` returns JSON `{authorization_url}`** rather than redirecting. | A browser navigation can't carry the `Authorization: Bearer` header. The client (script now, Streamlit in Phase 9) fetches the URL and opens it. |
+| **Expired or revoked tokens:** Google's `invalid_grant` (e.g. the 7-day refresh-token expiry in Testing mode) sets `needs_reconnect=true` and gives **409** "Google access expired or was revoked. Please reconnect…". A 401 from Calendar on a cached access token triggers one refresh and a retry. Network errors or 5xx give **503**. `GET /integrations/google/status` reports `configured / connected / needs_reconnect / scopes`. If Google isn't configured, the endpoints give **503** and the rest of the app runs normally. | Your requirement: a clear error, never a 500. |
+| **No delete or edit tools.** Agent calendar tools: `list_calendar_events`, `create_calendar_event` (**proposes only**, stored as a `calendar_proposals` row with status `pending`), and `confirm_calendar_event`. | Your requirement. |
+| **Confirmation step:** an event is created only (a) when you press confirm, via `POST /integrations/google/proposals/{id}/confirm` (the Phase 9 button), or (b) through `confirm_calendar_event`, which refuses unless the proposal was made in an **earlier message** *and* your **current message is a clear yes** (it must start with yes/ok/sure/confirm/go ahead/add it…, and must not contain no/not/don't/cancel/stop/wait/change/instead/but/wrong). Proposals are single-use (`created` or `cancelled` is final). `POST /chat` returns `pending_confirmations` for proposals made in that turn. | The model can't propose and create in the same turn, and a hedged reply ("yes but at 7pm") doesn't create anything. Tested both ways. |
+| **Identity:** every Google operation takes the user from the verified token (API) or the agent's config (tools), and every query filters on it. A proposal id belonging to another user gives "not found". | Your requirement, the same model as Phase 6. |
+| **Privacy:** `DELETE /me/data` **revokes the refresh token at Google** (best effort), then deletes it, along with `calendar_proposals` and `oauth_states` (the cascade). `remaining_data()` now also counts `calendar_proposals` and `oauth_states`. `DELETE /integrations/google` revokes and deletes on its own. `docs/PRIVACY.md` is updated. | Your requirement. |
+| Migration `ad68b38fe653` adds `oauth_states` and `calendar_proposals`. | |
+| Testing mode: refresh tokens for the calendar scope **expire after 7 days**, so reconnect before a demo. The status endpoint and tools say so when it happens. | Google policy for unverified apps in Testing. |
+
+### Verification
+- **Offline: 295 tests** (26 new Google tests, against a fake Google server):
+  - the consent URL parameters;
+  - encrypted storage;
+  - state single-use, invalid, expired and forged (nonce of B with payload naming A);
+  - denied consent and missing refresh token;
+  - revocation in the POST body;
+  - nothing secret in logs;
+  - not-configured → 503;
+  - expired/revoked → 409 with `needs_reconnect`, then reconnect;
+  - a rejected access token refreshed once;
+  - outage → 503;
+  - propose → confirm only on a later "yes";
+  - same-turn confirm refused, and "no / make it 7pm instead / wait / a question" refused;
+  - API confirm/cancel buttons with 404/409;
+  - cross-user proposal refused (even with a smuggled `user_id`);
+  - tools when not connected or expired;
+  - no delete or edit tool;
+  - `DELETE /me/data` revokes at Google, leaves zero for A and doesn't touch B.
+- **Docker:**
+  - Google configured in the container, migration at head;
+  - a forged state on `/callback` gets 400;
+  - Google's consent page loads for your client and redirect URI (no `redirect_uri_mismatch` / `invalid_client`).
+- **Manual (your Google account): `scripts/google_calendar_check.py`.** It connects, proposes, shows nothing is created before you confirm, confirms, and checks the event exists. `--disconnect` revokes.

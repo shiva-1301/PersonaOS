@@ -96,6 +96,10 @@ about them; create_goal, add_task, update_task and generate_study_plan to make c
 - The user's notes: search_documents for questions about content; list_documents then \
 summarize_document for summaries.
 - remember_explicit only when the user explicitly asks you to remember something.
+- Calendar: list_calendar_events to see their schedule. To add an event, call \
+create_calendar_event (it only PROPOSES), show the details and ask the user to confirm. \
+Only when their NEXT message clearly says yes, call confirm_calendar_event. You cannot \
+delete or edit calendar events.
 Rules:
 - Convert dates to YYYY-MM-DD using the current time above; if no year is given, use the \
 next such date. Times are the user's local time.

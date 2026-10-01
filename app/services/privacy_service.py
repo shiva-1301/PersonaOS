@@ -5,8 +5,9 @@ Stores and how each is cleared:
 - Mem0 SQLite history + buffered messages        -> purged by memory id / session scope
   (Mem0's own delete WRITES history rows with the deleted text, so this runs after it)
 - Document chunks (Chroma `personaos_documents__*`) -> delete where user_id
+- Google: the refresh token is revoked AT GOOGLE (best effort), then deleted
 - Postgres: the users row; everything else cascades (sessions, messages, goals, tasks,
-  documents, memory_meta, google_tokens)
+  documents, memory_meta, google_tokens, calendar_proposals, oauth_states)
 External stores are cleared first: if anything fails, the user row still exists and the
 request can simply be repeated.
 """
@@ -17,19 +18,31 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    CalendarProposal,
     ChatMessage,
     ChatSession,
     Document,
     Goal,
     GoogleToken,
     MemoryMeta,
+    OAuthState,
     Task,
     User,
 )
 from app.services.container import Services
 
 CONFIRM_PHRASE = "DELETE MY DATA"
-USER_TABLES = (ChatSession, ChatMessage, Goal, Task, Document, MemoryMeta, GoogleToken)
+USER_TABLES = (
+    ChatSession,
+    ChatMessage,
+    Goal,
+    Task,
+    Document,
+    MemoryMeta,
+    GoogleToken,
+    CalendarProposal,
+    OAuthState,
+)
 
 
 def _postgres_counts(db: Session, user_id: uuid.UUID) -> dict[str, int]:
@@ -64,6 +77,9 @@ def remaining_data(
 def delete_all_user_data(db: Session, services: Services, user: User) -> dict:
     user_id = user.id
     deleted = {f"postgres.{k}": v for k, v in _postgres_counts(db, user_id).items()}
+    google_removed = False
+    if services.google is not None and db.get(GoogleToken, user_id) is not None:
+        google_removed = services.google.disconnect(db, user_id)  # revoke at Google + delete
     memory = services.memory.purge_user(db, user_id)
     chunks = services.rag.count(user_id)
     services.rag.collection.delete(where={"user_id": str(user_id)})
@@ -75,4 +91,5 @@ def delete_all_user_data(db: Session, services: Services, user: User) -> dict:
         "mem0.sqlite_history": memory["history_rows"],
         "mem0.sqlite_messages": memory["message_rows"],
         "chroma.document_chunks": chunks,
+        "google.connection_removed": int(google_removed),
     }

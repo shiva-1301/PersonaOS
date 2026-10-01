@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 
 from langchain_core.runnables import RunnableConfig
@@ -33,6 +33,8 @@ from app.db.models import Document, Goal, Task, User
 from app.schemas.planner import PlanRequest
 from app.services.document_service import DocumentNotReady
 from app.services.document_service import summarize as summarize_doc
+from app.services.google_client import GoogleError, ReconnectRequired
+from app.services.google_service import NotConnected, ProposalError
 from app.services.planner_service import (
     PlanGenerationError,
     PlanWindowError,
@@ -456,6 +458,144 @@ def remember_explicit(fact: str, config: RunnableConfig) -> str:
         return _json({"remembered": fact[:200]})
 
 
+# --------------------------------------------------------------------------- calendar
+#
+# No tool deletes or edits events. Creating one is a two-step, user-confirmed action:
+# create_calendar_event only PROPOSES (stored as pending). The event is created by
+# confirm_calendar_event in a LATER message whose text is a clear "yes", or by the user
+# pressing a confirm button (POST /integrations/google/proposals/{id}/confirm).
+
+_YES = re.compile(
+    r"^\s*(yes|yeah|yep|yup|sure|ok|okay|confirm(ed)?|go ahead|do it|please do|create it|"
+    r"add it|book it|schedule it|sounds good|correct|that's right|perfect|great)\b",
+    re.IGNORECASE,
+)
+_NO = re.compile(r"\b(no|not|don'?t|cancel|stop|wait|change|instead|but|wrong)\b", re.IGNORECASE)
+
+
+def _is_clear_yes(text: str) -> bool:
+    return bool(_YES.match(text or "")) and not _NO.search(text or "")
+
+
+def _google_or_error(services):
+    if services.google is None:
+        raise ToolError("Google Calendar is not available on this server.")
+    return services.google
+
+
+def _calendar_error(exc: Exception) -> ToolError:
+    if isinstance(exc, NotConnected):
+        return ToolError(
+            "Google Calendar is not connected. Tell the user to connect it in Integrations."
+        )
+    if isinstance(exc, ReconnectRequired):
+        return ToolError(
+            "Google access expired or was revoked. Tell the user to reconnect Google Calendar."
+        )
+    return ToolError(str(exc)[:200])
+
+
+@tool
+@_logged
+def list_calendar_events(config: RunnableConfig, days_ahead: int = 7) -> str:
+    """List the user's Google Calendar events for the next days_ahead days (max 60)."""
+    with _context(config) as (db, user, services):
+        google = _google_or_error(services)
+        now = datetime.now(UTC)
+        try:
+            events = google.list_events(
+                db, user.id, now, now + timedelta(days=max(1, min(days_ahead, 60)))
+            )
+        except (NotConnected, GoogleError) as exc:
+            raise _calendar_error(exc) from None
+        tz = user_zone(user.timezone)
+        for e in events:
+            if e["start"] and "T" in e["start"]:
+                e["start"] = _local(datetime.fromisoformat(e["start"]), tz)
+            e.pop("link", None)
+        return _json({"events": events[:MAX_LIST_ITEMS]})
+
+
+@tool
+@_logged
+def create_calendar_event(
+    title: str,
+    start: str,
+    end: str,
+    config: RunnableConfig,
+    description: str | None = None,
+) -> str:
+    """PROPOSE a Google Calendar event (start/end: local "YYYY-MM-DDTHH:MM"). Nothing is
+    created yet: show the user the details and ask them to confirm. Only after they
+    reply yes in their NEXT message, call confirm_calendar_event with the proposal_id."""
+    with _context(config) as (db, user, services):
+        google = _google_or_error(services)
+        connection = google.status(db, user.id)
+        if not connection["connected"]:
+            # Say so now rather than after the user has confirmed.
+            raise _calendar_error(
+                ReconnectRequired("") if connection["needs_reconnect"] else NotConnected()
+            )
+        tz = user_zone(user.timezone)
+        try:
+            start_at = to_utc(datetime.fromisoformat(start), tz)
+            end_at = to_utc(datetime.fromisoformat(end), tz)
+        except ValueError:
+            raise ToolError('start and end must be "YYYY-MM-DDTHH:MM"') from None
+        if end_at <= start_at:
+            raise ToolError("end must be after start")
+        if start_at < datetime.now(UTC) - timedelta(minutes=5):
+            raise ToolError("that time is in the past")
+        proposal = google.propose(db, user.id, title, start_at, end_at, tz.key, description)
+        return _json(
+            {
+                "proposal_id": str(proposal.id),
+                "status": "awaiting the user's confirmation - NOT created yet",
+                "title": proposal.title,
+                "start": _local(proposal.start_at, tz),
+                "end": _local(proposal.end_at, tz),
+                "next_step": "Ask the user to confirm. Do not say it was added.",
+            }
+        )
+
+
+@tool
+@_logged
+def confirm_calendar_event(proposal_id: str, config: RunnableConfig) -> str:
+    """Create a previously proposed event, ONLY when the user's current message clearly
+    confirms it (e.g. "yes, add it"). Never call it in the same message as the proposal."""
+    conf = config["configurable"]
+    with _context(config) as (db, user, services):
+        google = _google_or_error(services)
+        try:
+            proposal = google.get_proposal(db, user.id, _uuid(proposal_id, "Event proposal"))
+        except ProposalError as exc:
+            raise ToolError(str(exc)) from None
+        if proposal.created_at >= conf["asked_at"]:
+            raise ToolError(
+                "This proposal was made in this message. Ask the user to confirm first."
+            )
+        if not _is_clear_yes(conf.get("user_message", "")):
+            raise ToolError(
+                "The user's message is not a clear confirmation. Ask them to confirm "
+                "(or let them change the details) before creating the event."
+            )
+        try:
+            proposal = google.confirm(db, user.id, proposal.id)
+        except (NotConnected, GoogleError, ProposalError) as exc:
+            raise _calendar_error(exc) from None
+        tz = user_zone(user.timezone)
+        return _json(
+            {
+                "created_event": {
+                    "title": proposal.title,
+                    "start": _local(proposal.start_at, tz),
+                    "end": _local(proposal.end_at, tz),
+                }
+            }
+        )
+
+
 ALL_TOOLS: list[BaseTool] = [
     search_documents,
     list_documents,
@@ -467,4 +607,7 @@ ALL_TOOLS: list[BaseTool] = [
     list_tasks,
     generate_study_plan,
     remember_explicit,
+    list_calendar_events,
+    create_calendar_event,
+    confirm_calendar_event,
 ]

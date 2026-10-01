@@ -14,7 +14,11 @@ PersonaOS keeps every piece of data tied to your account. No other user can read
 | Memories: short facts about you extracted from chat, or saved when you say "remember that…" | ChromaDB collection `personaos_mem0__*` (text and embedding) | Personalisation |
 | Memory lifecycle: state, strength, access count, last access, what replaced it | PostgreSQL `memory_meta` | Forgetting curve and supersession |
 | Mem0's own bookkeeping: memory change history and a buffer of your recent messages | SQLite `mem0_history.db` (next to ChromaDB) | Used by Mem0 when extracting memories |
-| Google Calendar connection (Phase 8): an encrypted refresh token | PostgreSQL `google_tokens` | Creating calendar events |
+| Google Calendar connection: the refresh token, **encrypted** with `TOKEN_ENCRYPTION_KEY`, plus the granted scope | PostgreSQL `google_tokens` | Reading your events and creating events you confirmed |
+| Calendar event proposals: title and times the assistant suggested, and whether you confirmed or cancelled | PostgreSQL `calendar_proposals` | Events are created only after you confirm |
+| Sign-in-with-Google handshakes in progress (a random value, expires after 10 minutes, single use) | PostgreSQL `oauth_states` | Protecting the Google connection flow |
+
+Google access is limited to your calendar events (`calendar.events`). PersonaOS can read your upcoming events, and it creates an event only after you confirm a proposal. It never edits or deletes events. Your Google tokens are never logged or shown. While the app is in Google's Testing mode, the connection expires after 7 days and the app asks you to reconnect.
 
 Models run locally by default (Ollama), so prompts don't leave your machine. If you configure a cloud model such as Gemini, your messages and the relevant memories and excerpts are sent to that provider. On free tiers the provider may use them, so use only non-sensitive data there.
 
@@ -33,13 +37,17 @@ Models run locally by default (Ollama), so prompts don't leave your machine. If 
 | Memory overview (counts by state, last 7 days) | `GET /memory/health` |
 | Forget one memory everywhere (vector, lifecycle record, Mem0 history) | `DELETE /memory/{id}` |
 | Delete a document (record **and** its chunks) | `DELETE /documents/{id}` |
+| Disconnect Google Calendar (access revoked at Google, token deleted) | `DELETE /integrations/google` |
 | **Delete everything** | `DELETE /me/data` with body `{"confirm": "DELETE MY DATA"}` |
 
 `DELETE /me/data` removes, for your account only:
 - the memories in ChromaDB;
 - Mem0's history rows and buffered messages in SQLite;
 - the document chunks in ChromaDB;
-- your user record, which also removes your chats, goals, tasks, documents, memory records and Google connection.
+- your Google connection: access is **revoked at Google** first, then the token is deleted;
+- your user record, which also removes your chats, goals, tasks, documents, memory records, calendar proposals and sign-in handshakes.
+
+Events already in your Google Calendar stay there: they're yours, in your Google account.
 
 The response lists how much was deleted from each store. This is verified by tests that check every store is empty for the deleted user and unchanged for everyone else.
 

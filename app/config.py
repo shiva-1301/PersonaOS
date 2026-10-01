@@ -151,7 +151,9 @@ class Settings(BaseSettings):
 
     @property
     def google_enabled(self) -> bool:
-        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+        return bool(
+            self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET and self.TOKEN_ENCRYPTION_KEY
+        )
 
 
 @lru_cache

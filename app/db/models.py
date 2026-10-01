@@ -208,3 +208,41 @@ class GoogleToken(Base):
     needs_reconnect: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+
+
+PROPOSAL_STATUSES = ("pending", "created", "cancelled")
+
+
+class OAuthState(Base):
+    """Single-use, expiring OAuth `state`, bound to the user who started the flow."""
+
+    __tablename__ = "oauth_states"
+    __table_args__ = (Index("ix_oauth_states_user_id", "user_id"),)
+
+    nonce: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class CalendarProposal(Base):
+    """An event the assistant proposed; created in Google only after the user confirms."""
+
+    __tablename__ = "calendar_proposals"
+    __table_args__ = (
+        _one_of("status", PROPOSAL_STATUSES, "status"),
+        Index("ix_calendar_proposals_user_id_status", "user_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = _user_fk()
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    event_id: Mapped[str | None] = mapped_column(String(255))
+    event_link: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -43,6 +43,8 @@ class ChatTurn:
     memories_used: int
     sources: list[Source]
     tools_used: list[str] = field(default_factory=list)
+    # Calendar proposals created this turn, waiting for the user's confirmation.
+    pending_confirmations: list[dict] = field(default_factory=list)
 
 
 def get_owned_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> ChatSession:

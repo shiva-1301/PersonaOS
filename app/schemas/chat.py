@@ -36,6 +36,9 @@ class ChatOut(BaseModel):
     sources: list[SourceOut] = []
     # Names of the tools the agent used for this reply, in order (empty in plain mode).
     tools_used: list[str] = []
+    # Calendar events proposed this turn: created only after the user confirms (reply
+    # "yes" or POST /integrations/google/proposals/{id}/confirm).
+    pending_confirmations: list[dict] = []
 
 
 class SessionOut(BaseModel):

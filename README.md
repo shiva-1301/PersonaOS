@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 7 (memory lifecycle and privacy)**. What is stored and how to delete it: [docs/PRIVACY.md](docs/PRIVACY.md). See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 8 (Google Calendar)**. What is stored and how to delete it: [docs/PRIVACY.md](docs/PRIVACY.md). See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -51,6 +51,8 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 .venv\Scripts\python.exe scripts\verify_agent_docker.py
 # Memory decay, supersession, deleting one memory, and "delete all my data" (every store)
 .venv\Scripts\python.exe scripts\verify_lifecycle_docker.py
+# Google Calendar with your real Google test account (opens the consent page in your browser)
+.venv\Scripts\python.exe scripts\google_calendar_check.py --email <firebase-test-user-email>
 ```
 
 Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
@@ -92,6 +94,20 @@ Invoke-RestMethod -Method Post http://localhost:8000/chat -Headers $h -ContentTy
 # Streaming (Server-Sent Events): token / reset / tool / done / error events
 curl.exe -N -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d '{\"message\":\"What do my notes say about entropy?\"}' http://localhost:8000/chat/stream
 ```
+
+### Google Calendar
+
+Optional: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` in `.env` (see `.env.example`). The assistant can read your upcoming events and **propose** new ones. An event is created only after you confirm, either by replying "yes" in your next message or with `POST /integrations/google/proposals/{id}/confirm`. It never edits or deletes events.
+
+```powershell
+$url = (Invoke-RestMethod http://localhost:8000/integrations/google/start -Headers $h).authorization_url
+Start-Process $url                                                   # consent in your browser
+Invoke-RestMethod http://localhost:8000/integrations/google/status -Headers $h
+Invoke-RestMethod "http://localhost:8000/integrations/google/events?days=7" -Headers $h
+Invoke-RestMethod -Method Delete http://localhost:8000/integrations/google -Headers $h   # disconnect
+```
+
+In Google's Testing mode the connection expires after 7 days; the status shows `needs_reconnect` and you simply connect again.
 
 ### Memory and privacy
 
