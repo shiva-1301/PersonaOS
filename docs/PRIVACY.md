@@ -15,7 +15,7 @@ PersonaOS keeps every piece of data tied to your account. No other user can read
 | Memory lifecycle: state, strength, access count, last access, what replaced it | PostgreSQL `memory_meta` | Forgetting curve and supersession |
 | Mem0's own bookkeeping: memory change history and a buffer of your recent messages | SQLite `mem0_history.db` (next to ChromaDB) | Used by Mem0 when extracting memories |
 | Google Calendar connection: the refresh token, **encrypted** with `TOKEN_ENCRYPTION_KEY`, plus the granted scope | PostgreSQL `google_tokens` | Reading your events and creating events you confirmed |
-| Calendar event proposals: title and times the assistant suggested, and whether you confirmed or cancelled | PostgreSQL `calendar_proposals` | Events are created only after you confirm |
+| Calendar event proposals: title and times the assistant suggested, the chat they were made in, and whether you confirmed or cancelled | PostgreSQL `calendar_proposals` | Events are created only after you confirm |
 | Sign-in-with-Google handshakes in progress (a random value, expires after 10 minutes, single use) | PostgreSQL `oauth_states` | Protecting the Google connection flow |
 
 Google access is limited to your calendar events (`calendar.events`). PersonaOS can read your upcoming events, and it creates an event only after you confirm a proposal. It never edits or deletes events. Your Google tokens are never logged or shown. While the app is in Google's Testing mode, the connection expires after 7 days and the app asks you to reconnect.

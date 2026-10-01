@@ -52,7 +52,7 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 # Memory decay, supersession, deleting one memory, and "delete all my data" (every store)
 .venv\Scripts\python.exe scripts\verify_lifecycle_docker.py
 # Google Calendar with your real Google test account (opens the consent page in your browser)
-.venv\Scripts\python.exe scripts\google_calendar_check.py --email <firebase-test-user-email>
+.venv\Scripts\python.exe scripts\google_calendar_check.py --email <firebase-test-user-email> --timezone Asia/Kolkata
 ```
 
 Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
@@ -85,7 +85,7 @@ Chat answers cite the documents they used in `sources`. Document text is always 
 
 ### The agent
 
-Chat runs a LangGraph agent that can use tools on your behalf: create and list goals, add and update tasks, list this week's tasks, search and summarise your notes, generate study plans, and remember things you ask it to. `tools_used` in the response shows what it did. It can't delete anything, and it only ever acts on your own data.
+Chat runs a LangGraph agent that can use tools on your behalf: create and list goals, add and update tasks, list this week's tasks, search and summarise your notes, generate study plans, and remember things you ask it to. `tools_used` in the response shows what it did. It can't delete anything, and it only ever acts on your own data. A clear request such as "Make me a study plan for my ML course goal, 6 hours a week" is planned in code, so the local model can't skip it.
 
 ```powershell
 # Ask in plain language; the agent picks the tools
@@ -97,7 +97,7 @@ curl.exe -N -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d
 
 ### Google Calendar
 
-Optional: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` in `.env` (see `.env.example`). The assistant can read your upcoming events and **propose** new ones. An event is created only after you confirm, either by replying "yes" in your next message or with `POST /integrations/google/proposals/{id}/confirm`. It never edits or deletes events.
+Optional: set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `TOKEN_ENCRYPTION_KEY` in `.env` (see `.env.example`). The assistant can read your upcoming events and **propose** new ones. An event is created only after you confirm, either by replying "yes" as your next message in the same chat (pass its `session_id`) or with `POST /integrations/google/proposals/{id}/confirm`. The "yes" is checked in code, not by the model. It never edits or deletes events. Times are read in your profile's timezone (`PATCH /me {"timezone": "Asia/Kolkata"}`).
 
 ```powershell
 $url = (Invoke-RestMethod http://localhost:8000/integrations/google/start -Headers $h).authorization_url

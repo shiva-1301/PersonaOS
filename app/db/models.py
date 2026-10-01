@@ -236,6 +236,10 @@ class CalendarProposal(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = _user_fk()
+    # The chat the proposal was made in: a "yes" confirms it only in that chat's next turn.
+    # No foreign key: tools write in their own transaction, before the turn commits a
+    # brand-new chat session. Rows still go with the user (user_id cascade).
+    session_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

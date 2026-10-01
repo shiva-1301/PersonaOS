@@ -143,7 +143,8 @@ def test_study_plan_from_chat(db_app, db_client, db_session):
         plan_for_listed_goal,
         lambda msgs: f"Created {last_tool_result(msgs)['sessions_created']} sessions.",
     )
-    body = chat(db_client, A, "Make me a study plan for this goal, 6 hours a week")
+    # Not phrased as "study plan": left to the model (the code guard has its own tests).
+    body = chat(db_client, A, "Plan this goal for me, 6 hours a week")
 
     tasks = db_session.scalars(select(Task).where(Task.goal_id == uuid.UUID(goal["id"]))).all()
     assert len(tasks) >= 3

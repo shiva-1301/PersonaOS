@@ -376,3 +376,32 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
   - a forged state on `/callback` gets 400;
   - Google's consent page loads for your client and redirect URI (no `redirect_uri_mismatch` / `invalid_client`).
 - **Manual (your Google account): `scripts/google_calendar_check.py`.** It connects, proposes, shows nothing is created before you confirm, confirms, and checks the event exists. `--disconnect` revokes.
+
+### Phase 8 follow-up: timezones and a deterministic "yes"
+- **Timezone.** Event times are read in the user's `users.timezone` and sent to Google as local time with the offset plus the IANA name. For example, Asia/Kolkata 18:00 is sent as `2026-10-02T18:00:00+05:30` with `timeZone: "Asia/Kolkata"`.
+  - The `…18:00:00Z` in the first manual check was correct for that account: its timezone was still the default `UTC`.
+  - The check script now takes `--timezone` and saves it on the profile.
+  - The Phase 9 UI should set the timezone from the browser at first sign-in.
+- **"Yes" is handled in code, not by the model.** In the manual check, the "yes" went to a new chat (the script didn't pass `session_id`), so the model had no context and asked for the details again. A small model could also do that in the same chat. So:
+  - Proposals record the chat they were made in (`calendar_proposals.session_id`).
+  - Before the model runs, the runner checks whether the message is a clear yes (same rule as before) and whether this chat's PREVIOUS turn made pending proposals. If so, it confirms them in code (`app/agent/confirmations.py`).
+  - A short yes (≤ 8 words) gets a template reply, with no model call. A longer one ("yes, and also add a task…") is confirmed first; then the agent answers the rest, with a note saying what already happened.
+  - The yes only answers the previous turn of the same chat. A yes in another chat, or after an unrelated message, confirms nothing; the proposal stays pending for the confirm button.
+  - Same-message proposals are still never confirmed.
+  - `confirm_calendar_event` remains as a fallback with the same rules.
+  - If Google access has expired, the reply says to reconnect, and the proposal stays pending.
+- **`session_id` has no foreign key.** Tools write in their own transaction, before the turn commits a brand-new chat session, so a foreign key would reject the first proposal in a new chat. The column is indexed, and rows are deleted with the user through `user_id`.
+- **Proposal `created_at` is set in Python**, the same clock as chat message timestamps, which the previous-turn check compares with.
+- **Study-plan requests: a code-level guard.** In the Docker agent check, qwen2.5:7b sometimes answered "Make me a study plan for my ML course goal, 6 hours a week" by asking for start and end dates. The planner doesn't need them: it starts today and ends on the goal's target date. Our own rule "ask for missing dates before scheduling anything" invited this.
+  - Measured with fresh state for each run (new user, one goal with a target date), calling `generate_study_plan`:
+    - old prompt: 0 of 5;
+    - reworded prompt: 4 of 5;
+    - prompt also ruling out questions about days and times: **6 of 10**.
+  - That's below the 9-of-10 bar, so we stopped tuning the wording and added `app/agent/study_plan_guard.py`. It applies when a message is clearly a study-plan request:
+    - an action word, "study plan" or "study schedule", and hours per week;
+    - no dates, weekdays, months, times of day, "next" or "starting", and no negation;
+    - exactly one of the caller's own active goals matches, by the key words of its title, or the user has only one active goal;
+    - that goal has a target date.
+  - In that case, the runner creates the plan in code before the model runs, through the same `plan_for_goal` as the tool. The model gets the result in the system prompt and only describes it. Its own `generate_study_plan` call for that goal is refused ("already created in this message"), so there are never duplicate sessions.
+  - Anything less clear (dates, preferences, an ambiguous goal, no target date) goes to the model as before.
+  - The prompt rule was kept as reworded.

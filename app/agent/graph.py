@@ -15,7 +15,7 @@ from langgraph.prebuilt import ToolNode
 
 from app.agent.prompts import TOOL_LIMIT_NOTE, Excerpt, build_system_prompt
 from app.agent.state import AgentState
-from app.agent.tools import ALL_TOOLS
+from app.agent.tools import ALL_TOOLS, DUPLICATE_PLAN
 from app.db.models import ChatMessage, ChatSession, User
 from app.services.llm import invoke_with_backoff
 from app.services.time_utils import user_zone
@@ -77,6 +77,8 @@ def build_agent_graph(tools=ALL_TOOLS):
             excerpts=[Excerpt(c.filename, c.chunk_index, c.text) for c in chunks],
             agent=True,
         )
+        if conf.get("system_note"):  # e.g. calendar proposals already confirmed in code
+            system = f"{system}\n\n{conf['system_note']}"
         return {
             "system_prompt": system,
             "memories": [m.text for m in memories],
@@ -93,14 +95,17 @@ def build_agent_graph(tools=ALL_TOOLS):
         }
 
     def agent(state: AgentState, config: RunnableConfig) -> dict:
-        services = _conf(config)["services"]
+        conf = _conf(config)
+        services = conf["services"]
         rounds = state.get("iteration_count", 0)
         system = state["system_prompt"]
         if rounds >= MAX_TOOL_ROUNDS:
             model = services.chat_model  # no tools bound: it must answer now
             system = f"{system}\n\n{TOOL_LIMIT_NOTE}"
         else:
-            model = services.chat_model.bind_tools(tools)
+            # Tools already run in code this turn (e.g. the study-plan guard) aren't offered.
+            hidden = conf.get("hidden_tools", ())
+            model = services.chat_model.bind_tools([t for t in tools if t.name not in hidden])
         for attempt in range(1, EMPTY_RESPONSE_ATTEMPTS + 1):
             response = invoke_with_backoff(
                 model,
@@ -124,6 +129,8 @@ def build_agent_graph(tools=ALL_TOOLS):
         outcomes = []
         for msg in result["messages"]:
             if isinstance(msg, ToolMessage):
+                if DUPLICATE_PLAN in str(msg.content):
+                    continue  # refused repeat of a plan already made: nothing was done
                 failed = msg.status == "error" or str(msg.content).startswith('{"error"')
                 outcomes.append({"tool": msg.name, "ok": not failed})
         return {

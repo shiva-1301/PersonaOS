@@ -294,38 +294,153 @@ def tomorrow_at(hour: int) -> str:
     return (datetime.now(UTC) + timedelta(days=1)).strftime(f"%Y-%m-%dT{hour:02d}:00")
 
 
-def chat(client, headers, message):
-    resp = client.post("/chat", json={"message": message}, headers=headers)
+def chat(client, headers, message, session_id=None):
+    body = {"message": message, **({"session_id": session_id} if session_id else {})}
+    resp = client.post("/chat", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()
 
 
-def test_agent_proposes_then_creates_only_after_a_later_yes(google, db_app, db_client, db_session):
-    connect(db_client, A)
+def propose(db_app, client, headers, title="Study session", start=None, end=None):
+    """One chat turn in which the model proposes an event; returns the response."""
     script(
         db_app,
         call(
             "create_calendar_event",
-            title="Study session",
-            start=tomorrow_at(18),
-            end=tomorrow_at(19),
+            title=title,
+            start=start or tomorrow_at(18),
+            end=end or tomorrow_at(19),
         ),
         "Shall I add it?",
     )
-    first = chat(db_client, A, "Put tomorrow's study session on my calendar")
+    return chat(client, headers, f"Put {title} on my calendar")
+
+
+def sent_events(google) -> list[dict]:
+    return [
+        json.loads(r.content)
+        for r in google.requests
+        if r.method == "POST" and str(r.url).startswith(EVENTS_URL)
+    ]
+
+
+def test_yes_in_the_next_message_confirms_in_code_without_the_model(
+    google, db_app, db_client, db_session
+):
+    connect(db_client, A)
+    first = propose(db_app, db_client, A)
     assert google.events == []  # nothing created yet
     pending = first["pending_confirmations"]
     assert len(pending) == 1 and pending[0]["title"] == "Study session"
 
-    proposal_id = pending[0]["proposal_id"]
-    model = script(db_app, call("confirm_calendar_event", proposal_id=proposal_id), "Added!")
-    chat(db_client, A, "Yes, add it")
-    assert len(google.events) == 1
-    assert google.events[0]["summary"] == "Study session"
-    assert google.events[0]["start"]["timeZone"] == "UTC"
-    assert json.loads(model.prompts[1][-1].content)["created_event"]["title"] == "Study session"
+    # What happened in the manual check: the model ignores the proposal and asks again.
+    model = script(db_app, "Sure! What event would you like to add, and when?")
+    second = chat(db_client, A, "Yes, add it", session_id=first["session_id"])
+    assert model.prompts == []  # decided in code: the model was never asked
+    assert second["tools_used"] == ["confirm_calendar_event"]
+    assert "Study session" in second["reply"] and "Done" in second["reply"]
+    assert len(google.events) == 1 and google.events[0]["summary"] == "Study session"
     row = db_session.scalar(select(CalendarProposal))
     assert row.status == "created" and row.event_id == "evt-1"
+    assert str(row.session_id) == first["session_id"]
+    history = db_client.get(f"/chat/sessions/{first['session_id']}", headers=A).json()
+    assert [m["content"] for m in history["messages"]][-2:] == ["Yes, add it", second["reply"]]
+
+    # Another yes has nothing left to confirm: a normal agent turn, no duplicate event.
+    script(db_app, "You're welcome!")
+    third = chat(db_client, A, "ok", session_id=first["session_id"])
+    assert third["tools_used"] == [] and len(google.events) == 1
+
+
+@pytest.mark.parametrize(
+    ("zone", "day", "offset"),
+    [
+        ("Asia/Kolkata", "2027-01-15", "+05:30"),
+        ("America/New_York", "2027-01-15", "-05:00"),
+        ("America/New_York", "2027-07-15", "-04:00"),  # daylight saving time
+    ],
+)
+def test_events_are_sent_to_google_in_the_users_timezone(
+    google, db_app, db_client, db_session, zone, day, offset
+):
+    connect(db_client, A)
+    assert db_client.patch("/me", json={"timezone": zone}, headers=A).status_code == 200
+    first = propose(db_app, db_client, A, start=f"{day}T18:00", end=f"{day}T18:30")
+    chat(db_client, A, "Yes, add it", session_id=first["session_id"])
+
+    [sent] = sent_events(google)
+    assert sent["start"] == {"dateTime": f"{day}T18:00:00{offset}", "timeZone": zone}
+    assert sent["end"] == {"dateTime": f"{day}T18:30:00{offset}", "timeZone": zone}
+    row = db_session.scalar(select(CalendarProposal))
+    assert row.start_at == datetime.fromisoformat(f"{day}T18:00:00{offset}")
+    assert row.timezone == zone
+
+
+def test_yes_only_answers_the_previous_turn_of_the_same_chat(google, db_app, db_client):
+    connect(db_client, A)
+    first = propose(db_app, db_client, A)
+    proposal_id = first["pending_confirmations"][0]["proposal_id"]
+
+    # A yes in ANOTHER chat confirms nothing, and the model can't confirm it either.
+    model = script(db_app, call("confirm_calendar_event", proposal_id=proposal_id), "ok")
+    other = chat(db_client, A, "yes")
+    assert google.events == [] and other["session_id"] != first["session_id"]
+    assert "isn't awaiting an answer" in json.loads(model.prompts[1][-1].content)["error"]
+
+    # After an unrelated message in the same chat, a later yes is no longer an answer.
+    script(db_app, "It's sunny.")
+    chat(db_client, A, "what's the weather like?", session_id=first["session_id"])
+    model = script(db_app, call("confirm_calendar_event", proposal_id=proposal_id), "ok")
+    chat(db_client, A, "yes", session_id=first["session_id"])
+    assert google.events == []
+    assert "isn't awaiting an answer" in json.loads(model.prompts[1][-1].content)["error"]
+    pending = db_client.get("/integrations/google/proposals", headers=A).json()
+    assert [p["id"] for p in pending] == [proposal_id]  # still confirmable by the button
+
+
+def test_longer_yes_confirms_in_code_then_the_agent_handles_the_rest(google, db_app, db_client):
+    connect(db_client, A)
+    first = propose(db_app, db_client, A)
+    model = script(db_app, call("add_task", title="Buy milk"), "Added the event and the task.")
+    reply = chat(
+        db_client,
+        A,
+        "Yes, add it, and also add a task to buy milk for tomorrow please",
+        session_id=first["session_id"],
+    )
+    assert len(google.events) == 1
+    assert reply["tools_used"] == ["confirm_calendar_event", "add_task"]
+    system = model.prompts[0][0].content
+    assert "already confirmed" in system and "created in Google Calendar" in system
+
+
+def test_yes_when_google_access_expired_says_reconnect(google, db_app, db_client):
+    connect(db_client, A)
+    first = propose(db_app, db_client, A)
+    google.revoked.add("REFRESH-SECRET-1")
+    db_app.state.services.google._access.clear()
+    reply = chat(db_client, A, "yes please", session_id=first["session_id"])
+    assert google.events == []
+    assert "couldn't add" in reply["reply"] and "Reconnect Google Calendar" in reply["reply"]
+    pending = db_client.get("/integrations/google/proposals", headers=A).json()
+    assert len(pending) == 1  # kept: it can be confirmed after reconnecting
+
+
+def test_streamed_yes_confirms_in_code(google, db_app, db_client):
+    connect(db_client, A)
+    first = propose(db_app, db_client, A)
+    model = script(db_app, "What would you like to add?")
+    with db_client.stream(
+        "POST",
+        "/chat/stream",
+        json={"message": "Yes, add it", "session_id": first["session_id"]},
+        headers=A,
+    ) as resp:
+        body = "".join(resp.iter_text())
+    assert resp.status_code == 200
+    assert "event: tool" in body and "confirm_calendar_event" in body
+    assert "event: done" in body and "Study session" in body
+    assert model.prompts == [] and len(google.events) == 1
 
 
 def test_model_cannot_propose_and_confirm_in_the_same_turn(google, db_app, db_client):
@@ -355,11 +470,10 @@ def test_anything_but_a_clear_yes_does_not_create(google, db_app, db_client, rep
         call("create_calendar_event", title="Study", start=tomorrow_at(18), end=tomorrow_at(19)),
         "Confirm?",
     )
-    proposal_id = chat(db_client, A, "add study tomorrow 6pm")["pending_confirmations"][0][
-        "proposal_id"
-    ]
+    first = chat(db_client, A, "add study tomorrow 6pm")
+    proposal_id = first["pending_confirmations"][0]["proposal_id"]
     script(db_app, call("confirm_calendar_event", proposal_id=proposal_id), "ok")
-    chat(db_client, A, reply)
+    chat(db_client, A, reply, session_id=first["session_id"])
     assert google.events == []
 
 

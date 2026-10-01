@@ -28,6 +28,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, tool
 from sqlalchemy import select
 
+from app.agent.confirmations import is_clear_yes
 from app.agent.prompts import Excerpt, format_excerpts
 from app.db.models import Document, Goal, Task, User
 from app.schemas.planner import PlanRequest
@@ -406,41 +407,71 @@ def generate_study_plan(
     preferences: str | None = None,
 ) -> str:
     """Create dated study sessions (saved as tasks) for a goal. goal_id comes from
-    list_goals (the goal's title also works); hours_per_week is required; dates are
-    YYYY-MM-DD (end defaults to the goal's target date)."""
+    list_goals (the goal's title also works); hours_per_week is required. Dates are
+    optional YYYY-MM-DD: start defaults to today, end to the goal's target date, so
+    don't ask the user for them."""
     with _context(config) as (db, user, services):
         goal = _goal(db, user, goal_id)
-        # One plan per goal per message: a model that repeats the call must not create
-        # duplicate sessions.
-        planned = config["configurable"].setdefault("turn", {}).setdefault("planned_goals", set())
-        if goal.id in planned:
-            raise ToolError("A plan was already created for this goal in this message.")
-        try:
-            req = PlanRequest(
-                hours_per_week=hours_per_week,
+        return _json(
+            plan_for_goal(
+                db,
+                user,
+                services,
+                goal,
+                config,
+                hours_per_week,
                 start_date=start_date,
                 end_date=end_date,
                 preferences=preferences,
             )
-            result = make_plan(db, services, user, goal, req)
-        except (PlanWindowError, ValueError) as exc:
-            raise ToolError(str(exc)[:300]) from None
-        except PlanGenerationError:
-            raise ToolError("Could not produce a valid plan; ask the user to try again") from None
-        planned.add(goal.id)
-        tz = user_zone(user.timezone)
-        return _json(
-            {
-                "sessions_created": len(result.tasks),
-                "first": _local(result.tasks[0].due_at, tz),
-                "last": _local(result.tasks[-1].due_at, tz),
-                "adjustments": result.adjustments,
-                "sessions": [
-                    {"due": _local(t.due_at, tz), "title": t.title, "minutes": t.est_minutes}
-                    for t in result.tasks[:MAX_LIST_ITEMS]
-                ],
-            }
         )
+
+
+DUPLICATE_PLAN = "A plan was already created for this goal in this message."
+
+
+def plan_for_goal(
+    db,
+    user: User,
+    services,
+    goal: Goal,
+    config: RunnableConfig,
+    hours_per_week: float,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    preferences: str | None = None,
+) -> dict:
+    """Create the plan; shared by the tool and the runner's study-plan guard."""
+    # One plan per goal per message: a model that repeats the call must not create
+    # duplicate sessions.
+    planned = config["configurable"].setdefault("turn", {}).setdefault("planned_goals", set())
+    if goal.id in planned:
+        raise ToolError(DUPLICATE_PLAN)
+    try:
+        req = PlanRequest(
+            hours_per_week=hours_per_week,
+            start_date=start_date,
+            end_date=end_date,
+            preferences=preferences,
+        )
+        result = make_plan(db, services, user, goal, req)
+    except (PlanWindowError, ValueError) as exc:
+        raise ToolError(str(exc)[:300]) from None
+    except PlanGenerationError:
+        raise ToolError("Could not produce a valid plan; ask the user to try again") from None
+    planned.add(goal.id)
+    tz = user_zone(user.timezone)
+    return {
+        "goal": goal.title,
+        "sessions_created": len(result.tasks),
+        "first": _local(result.tasks[0].due_at, tz),
+        "last": _local(result.tasks[-1].due_at, tz),
+        "adjustments": result.adjustments,
+        "sessions": [
+            {"due": _local(t.due_at, tz), "title": t.title, "minutes": t.est_minutes}
+            for t in result.tasks[:MAX_LIST_ITEMS]
+        ],
+    }
 
 
 # --------------------------------------------------------------------------- memory
@@ -461,20 +492,10 @@ def remember_explicit(fact: str, config: RunnableConfig) -> str:
 # --------------------------------------------------------------------------- calendar
 #
 # No tool deletes or edits events. Creating one is a two-step, user-confirmed action:
-# create_calendar_event only PROPOSES (stored as pending). The event is created by
-# confirm_calendar_event in a LATER message whose text is a clear "yes", or by the user
-# pressing a confirm button (POST /integrations/google/proposals/{id}/confirm).
-
-_YES = re.compile(
-    r"^\s*(yes|yeah|yep|yup|sure|ok|okay|confirm(ed)?|go ahead|do it|please do|create it|"
-    r"add it|book it|schedule it|sounds good|correct|that's right|perfect|great)\b",
-    re.IGNORECASE,
-)
-_NO = re.compile(r"\b(no|not|don'?t|cancel|stop|wait|change|instead|but|wrong)\b", re.IGNORECASE)
-
-
-def _is_clear_yes(text: str) -> bool:
-    return bool(_YES.match(text or "")) and not _NO.search(text or "")
+# create_calendar_event only PROPOSES (stored as pending, tied to this chat). It is
+# created when the user's NEXT message in the same chat is a clear "yes": the runner
+# confirms it in code (agent/confirmations.py); confirm_calendar_event is a fallback
+# with the same rules. Or by a confirm button (POST /integrations/google/proposals/{id}/confirm).
 
 
 def _google_or_error(services):
@@ -546,7 +567,16 @@ def create_calendar_event(
             raise ToolError("end must be after start")
         if start_at < datetime.now(UTC) - timedelta(minutes=5):
             raise ToolError("that time is in the past")
-        proposal = google.propose(db, user.id, title, start_at, end_at, tz.key, description)
+        proposal = google.propose(
+            db,
+            user.id,
+            title,
+            start_at,
+            end_at,
+            tz.key,
+            description,
+            session_id=config["configurable"].get("session_id"),
+        )
         return _json(
             {
                 "proposal_id": str(proposal.id),
@@ -575,7 +605,13 @@ def confirm_calendar_event(proposal_id: str, config: RunnableConfig) -> str:
             raise ToolError(
                 "This proposal was made in this message. Ask the user to confirm first."
             )
-        if not _is_clear_yes(conf.get("user_message", "")):
+        awaiting = google.awaiting_answer(db, user.id, conf["session_id"], before=conf["asked_at"])
+        if proposal.id not in {p.id for p in awaiting}:
+            raise ToolError(
+                "This proposal isn't awaiting an answer in this conversation (it is from an "
+                "earlier message, another chat, or already decided). Propose it again."
+            )
+        if not is_clear_yes(conf.get("user_message", "")):
             raise ToolError(
                 "The user's message is not a clear confirmation. Ask them to confirm "
                 "(or let them change the details) before creating the event."

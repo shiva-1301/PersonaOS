@@ -19,11 +19,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.db.models import CalendarProposal, GoogleToken, OAuthState
+from app.db.models import CalendarProposal, ChatMessage, GoogleToken, OAuthState
 from app.services.google_client import GoogleClient, ReconnectRequired
 from app.services.time_utils import user_zone
 
@@ -233,9 +233,13 @@ class GoogleService:
         end: datetime,
         timezone: str,
         description: str | None = None,
+        session_id: uuid.UUID | None = None,
     ) -> CalendarProposal:
         proposal = CalendarProposal(
             user_id=user_id,
+            session_id=session_id,
+            # Same clock as chat message timestamps, which awaiting_answer compares with.
+            created_at=datetime.now(UTC),
             title=title.strip()[:200] or "Event",
             description=description,
             start_at=start,
@@ -253,6 +257,36 @@ class GoogleService:
                 select(CalendarProposal)
                 .where(CalendarProposal.user_id == user_id, CalendarProposal.status == "pending")
                 .order_by(CalendarProposal.created_at)
+            )
+        )
+
+    def awaiting_answer(
+        self, db: Session, user_id: uuid.UUID, session_id: uuid.UUID, before: datetime
+    ) -> list[CalendarProposal]:
+        """Pending proposals the assistant made in this chat's PREVIOUS turn: the ones the
+        user's current message (asked at `before`) is answering. Older proposals, other
+        chats' and this turn's own are excluded."""
+        last_user_message = db.scalar(
+            select(func.max(ChatMessage.created_at)).where(
+                ChatMessage.session_id == session_id,
+                ChatMessage.user_id == user_id,
+                ChatMessage.role == "user",
+                ChatMessage.created_at < before,
+            )
+        )
+        if last_user_message is None:
+            return []
+        return list(
+            db.scalars(
+                select(CalendarProposal)
+                .where(
+                    CalendarProposal.user_id == user_id,
+                    CalendarProposal.session_id == session_id,
+                    CalendarProposal.status == "pending",
+                    CalendarProposal.created_at >= last_user_message,
+                    CalendarProposal.created_at < before,
+                )
+                .order_by(CalendarProposal.start_at)
             )
         )
 

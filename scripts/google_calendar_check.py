@@ -15,7 +15,7 @@ What it does:
 Nothing secret is printed: no tokens, no client secret.
 
 PowerShell:
-  .venv\\Scripts\\python.exe scripts\\google_calendar_check.py --email <firebase-test-user-email>
+  .venv\\Scripts\\python.exe scripts\\google_calendar_check.py --email <e> --timezone Asia/Kolkata
   .venv\\Scripts\\python.exe scripts\\google_calendar_check.py --email <...> --disconnect
 """
 
@@ -38,6 +38,10 @@ def main() -> int:
     parser.add_argument("--email", required=True, help="PersonaOS (Firebase) test user email")
     parser.add_argument("--disconnect", action="store_true", help="revoke access at the end")
     parser.add_argument("--timeout", type=int, default=300, help="seconds to wait for consent")
+    parser.add_argument(
+        "--timezone",
+        help='your IANA timezone, e.g. "Asia/Kolkata"; saved on your PersonaOS profile',
+    )
     args = parser.parse_args()
 
     password = os.environ.get("PERSONAOS_PASSWORD_A") or getpass.getpass(
@@ -46,6 +50,14 @@ def main() -> int:
     token = firebase_token(args.email, password)
     me = http("GET", "/me", token)[1]
     print(f"Signed in to PersonaOS as {me['email']}")
+    if args.timezone:
+        code, me = http("PATCH", "/me", token, {"timezone": args.timezone})
+        if code != 200:
+            print(f"    Could not set timezone {args.timezone!r}: {me}")
+            return 1
+    print(f"    Your timezone: {me['timezone']} (event times are read in this timezone)")
+    if me["timezone"] == "UTC" and not args.timezone:
+        print('    Hint: pass --timezone "Asia/Kolkata" (or yours) so 18:00 means 18:00 local.')
 
     print("\n0. Preflight")
     status = http("GET", "/integrations/google/status", token)[1]
@@ -101,14 +113,16 @@ def main() -> int:
     events = http("GET", "/integrations/google/events?days=3", token)[1]
     check(not any(e["title"] == title for e in events), "event NOT created before confirmation")
 
-    status_code, reply = http("POST", "/chat", token, {"message": "Yes, add it"})
+    # Same chat session: "yes" answers the proposal from the previous message.
+    status_code, reply = http(
+        "POST", "/chat", token, {"message": "Yes, add it", "session_id": reply["session_id"]}
+    )
     print("    > Yes, add it")
     print(f"    {reply.get('reply', reply)!r}  tools={reply.get('tools_used')}")
-    if "confirm_calendar_event" not in reply.get("tools_used", []):
-        # The model didn't use the tool: confirm explicitly, like a UI button would.
-        pid = pending[0]["proposal_id"]
-        print("    (confirming via the API button endpoint instead)")
-        http("POST", f"/integrations/google/proposals/{pid}/confirm", token)
+    check(
+        status_code == 200 and "confirm_calendar_event" in reply.get("tools_used", []),
+        "the chat 'yes' confirmed the proposal",
+    )
 
     print("\n4. Check Google Calendar")
     events = http("GET", "/integrations/google/events?days=3", token)[1]
