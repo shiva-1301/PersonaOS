@@ -8,6 +8,8 @@ from datetime import datetime
 MEMORIES_HEADER = "## What you remember about the user"
 # Identifies study-plan prompts (the offline fake model answers them deterministically).
 PLAN_MARKER = "PersonaOS study-plan generator"
+# Identifies memory contradiction checks (answered deterministically by the fake model).
+SUPERSEDE_MARKER = "PersonaOS memory-supersession check"
 DOCUMENTS_HEADER = "## Excerpts from the user's documents"
 
 # Delimiters around untrusted document text. Anything in a document that imitates them is

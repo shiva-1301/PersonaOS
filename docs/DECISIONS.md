@@ -299,3 +299,38 @@ Chat answers of several hundred tokens took 28–47 s on the local model. Measur
 
   Earlier runs (before the resolver and retry fixes) exposed exactly the problems fixed above.
 - **No regressions:** `verify_memory_docker`, `verify_documents_docker` and `verify_planner_docker` all PASS with chat now going through the agent.
+
+## Phase 7: memory lifecycle, supersession, privacy (2026-10-01)
+
+| Decision | Reason |
+|---|---|
+| **Decay** (`app/services/memory_lifecycle.py`, pure functions with an explicit `now`): `S = 14 × (1 + 0.5 × access_count)` and `strength = exp(−days since last access / S)`. Below 0.5 is `stale` (still recalled, ranked lower); below 0.15 is `archived` (kept, never recalled). All four numbers are configurable (`MEMORY_DECAY_BASE_DAYS`, `MEMORY_STALE_BELOW`, `MEMORY_ARCHIVE_BELOW`, `MEMORY_REINFORCE_STEP`). | Build Spec §5.3. Pure functions make fake-clock tests trivial. |
+| **States:** `superseded` is final. Decay never revives an `archived` memory. A `stale` memory that is recalled and reinforced back above 0.5 becomes **active again**. | Handoff Phase 7 §2 recommended reactivation. Archived memories aren't recalled, so they can't be reinforced; they stay visible in `GET /memory` and can be deleted there. |
+| **Reinforcement on recall:** `access_count + 1`, `last_accessed_at = now`, `strength = min(1, strength + 0.1)`, but **only for recalled memories relevant to the question** (Mem0 score ≥ `MEMORY_REINFORCE_MIN_RELEVANCE` = 0.52). | Without the gate, a user with few memories reinforces all of them on every message and nothing ever fades. Calibrated with nomic: relevant question→memory pairs 0.536–0.694, unrelated at most 0.504. |
+| **Reinforcement and drift backfill run in their own short transaction**, committed immediately (`MemoryService._bookkeeping`). | Doing it in the turn's open transaction **hung the test suite**: agent tools (e.g. `remember_explicit`) run in other DB sessions, and their supersession updates waited forever on the `memory_meta` rows the turn had locked. |
+| **Supersession (our own check; Mem0 2.2.1 is ADD-only):** for each new memory, existing *active/stale* memories of the same user with a vector score ≥ `MEMORY_SUPERSEDE_MIN_SCORE` (0.52) are candidates. The memory model (JSON mode) judges in **two stages that must both agree**: (1) a list judgement ("could the new fact and this one both be true?"), then (2) a focused pairwise confirmation ("do these give different values for the same thing?"). The old row becomes `superseded` with `superseded_by=<new id>`. If the check fails, the new memory is kept and nothing is superseded. | Calibration with qwen2.5:7b on 10 held-out pairs (5 true contradictions, 5 compatible), each run twice: a single list prompt got **7/10** (false positives such as "taking the ML course" outdating "exam on 12 Dec", and a cat outdating a dog); per-fact judgement got 8/10; pairwise alone got 9/10. **Both together: 10/10 on both runs**, because their mistakes didn't overlap. A false positive hides a true fact, so precision matters most. Candidate floor: contradictions scored 0.53–0.66, unrelated pairs ≤ 0.51. |
+| **Nightly job** (`app/jobs/memory_lifecycle.py`): recomputes strength and state for active/stale memories; **removes `memory_meta` rows whose Mem0 vector is gone**; **backfills meta rows for Mem0 vectors that have none** (owner must exist). It's idempotent: the same `now` gives the same result. An optional `only_user` limits a run to one user. | Handoff Phase 7 §1, §4. `only_user` lets the Docker check simulate "60 days later" for a test user without ageing real users' memories. |
+| **Trigger:** `POST /internal/jobs/memory-lifecycle` with header `X-Cron-Secret`, compared in constant time (`hmac.compare_digest`). It returns **503 while `CRON_SECRET` is unset**, 401 for a missing or wrong secret (a user token isn't enough), and is hidden from the OpenAPI docs. No APScheduler: locally it can be triggered by Windows Task Scheduler / `curl`; in the cloud by the platform's cron (Phase 10). | Handoff: prefer a protected endpoint, which works with cloud cron. |
+| **Privacy endpoints:** `GET /memory` lists all of the user's memories with state, strength, access count, last access, source and `superseded_by` (archived and superseded included). `GET /memory/health` gives counts by state and memories created per day over the last 7 days. `DELETE /memory/{id}` removes one memory everywhere; another user's id or an unknown id gives 404. `DELETE /me/data` requires the body `{"confirm": "DELETE MY DATA"}` (anything else is 422) and returns what was deleted. | Build Spec §5.5 and handoff Phase 7 §5. |
+| **What `DELETE /me/data` clears, in order:** (1) Mem0 vectors (`delete_all(user_id)`); (2) **Mem0 SQLite `history` rows by the user's memory ids** and `messages` by `session_scope`; (3) **Chroma document chunks** by `user_id`; (4) the `users` row, whose cascade removes chat sessions and messages, goals, tasks, documents, memory_meta and Google tokens. External stores go first: if anything fails the user row still exists and the call can be repeated. | Both gaps found in Phases 3 and 4. **Mem0's own delete writes a `DELETE` history row containing the deleted text**, so the history purge must run *after* the vector delete; `DELETE /memory/{id}` does the same. |
+| **Proof of erasure:** `privacy_service.remaining_data()` counts what's left for a user in every store (each Postgres table, Mem0 vectors, Mem0 SQLite history and messages, Chroma chunks). The offline test and the Docker script both require **all zeros** for the deleted user and an **unchanged** count for the other user. | The Phase 7 acceptance criterion as written into the plan. |
+| The Firebase login itself is **not** deleted by the API (that's a client-side `user.delete()` in Phase 9's UI). Signing in again creates a new, empty account. | Handoff Phase 7 §5. |
+| The test database is now also truncated **at the start** of each test session. | A killed run had left rows behind that broke the next run. |
+
+### Verification
+- **Offline:** 268 tests, 24 of them new lifecycle/privacy tests:
+  - decay maths and state transitions;
+  - 60 untouched days → archived and not recalled; stale → active on reinforcement; frequent access slows decay; reinforcement cap and relevance gate;
+  - job idempotence, drift repair in both directions, per-user scope;
+  - supersession happens, doesn't happen for unrelated facts, never crosses users, and keeps the new memory if the checker fails; two-stage agreement;
+  - cron 503/401/200;
+  - list/health/delete isolation;
+  - `DELETE /me/data` leaves all zeros and the other user unchanged.
+- **`scripts/verify_lifecycle_docker.py`** (real qwen in Docker): **19/19**:
+  - cron returns 503 without `CRON_SECRET`;
+  - "Actually, I now prefer studying in the mornings" superseded "User studies best after 6 pm" (`superseded_by` → the new fact), so it's no longer recalled while the new preference is;
+  - "I'm taking the Andrew Ng ML course" did **not** supersede the exam date;
+  - 60 simulated days → all 3 live memories archived, nothing recalled, health shows them;
+  - deleting one memory removed its vector and SQLite history;
+  - `DELETE /me/data` → **every store zero for A** (including Chroma chunks and Mem0 SQLite), and B unchanged and still recalled.
+- **Not yet verified:** the cron success path in Docker, until `CRON_SECRET` is set in `.env`. It's covered offline.

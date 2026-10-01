@@ -19,7 +19,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from app.agent.prompts import MEMORIES_HEADER, PLAN_MARKER
+from app.agent.prompts import MEMORIES_HEADER, PLAN_MARKER, SUPERSEDE_MARKER
 
 _WORD = re.compile(r"[a-z0-9]+")
 _STOPWORDS = frozenset(
@@ -133,6 +133,34 @@ def fake_plan(prompt: str) -> str:
     return json.dumps({"tasks": tasks})
 
 
+_CHANGE_WORDS = ("now", "actually", "moved", "changed", "instead", "anymore")
+
+
+def _conflicts(newer: str, older: str) -> bool:
+    """Fake rule: a NEWER fact phrased as a change conflicts with an OLDER fact that
+    shares a keyword with it."""
+    new_tokens = set(_WORD.findall(newer.lower()))
+    if not new_tokens & set(_CHANGE_WORDS):
+        return False
+    ignore = _STOPWORDS | set(_CHANGE_WORDS) | {"user", "users"}
+    return bool((new_tokens - ignore) & (set(_WORD.findall(older.lower())) - ignore))
+
+
+def fake_supersede(prompt: str) -> str:
+    """Answers both supersession stages: the list judgement and the pairwise check."""
+    if "OLDER:" in prompt:
+        older = prompt.split("OLDER:", 1)[1].split("NEWER:", 1)[0]
+        newer = prompt.split("NEWER:", 1)[1]
+        return json.dumps({"conflict": _conflicts(newer, older)})
+    new = prompt.split("NEW:", 1)[-1].split("EXISTING:", 1)[0]
+    facts = []
+    for line in prompt.split("EXISTING:", 1)[-1].strip().splitlines():
+        number, _, text = line.partition(". ")
+        if number.isdigit():
+            facts.append({"n": int(number), "both_true": not _conflicts(new, text)})
+    return json.dumps({"facts": facts})
+
+
 def _text_of(messages: list[BaseMessage], kind: str) -> str:
     return "\n".join(_content(m) for m in messages if m.type == kind)
 
@@ -160,6 +188,8 @@ class FakeChatModel(BaseChatModel):
         system = _text_of(messages, "system")
         if EXTRACTION_MARKER in system:
             text = fake_extract(_text_of(messages, "human"))
+        elif SUPERSEDE_MARKER in system:
+            text = fake_supersede(_text_of(messages, "human"))
         elif PLAN_MARKER in system:
             text = fake_plan(_content(next(m for m in messages if m.type == "human")))
         else:

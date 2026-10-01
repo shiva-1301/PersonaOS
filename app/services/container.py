@@ -79,7 +79,10 @@ class Services:
         return self._get(
             "memory",
             lambda: MemoryService(
-                build_memory(self.settings, self.memory_model, self.embedder, self.chroma)
+                build_memory(self.settings, self.memory_model, self.embedder, self.chroma),
+                self.settings,
+                checker=self.memory_model,
+                session_factory=self.session_factory,
             ),
         )
 

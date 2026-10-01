@@ -70,6 +70,19 @@ class Settings(BaseSettings):
     CHAT_HISTORY_LIMIT: int = Field(default=20, ge=0, le=200)
     MEMORY_RECALL_K: int = Field(default=5, ge=1, le=50)
     MAX_MESSAGE_CHARS: int = Field(default=8000, ge=100)
+
+    # --- Memory lifecycle (Phase 7) ---
+    MEMORY_DECAY_BASE_DAYS: float = Field(default=14, gt=0)
+    MEMORY_STALE_BELOW: float = Field(default=0.5, gt=0, le=1)
+    MEMORY_ARCHIVE_BELOW: float = Field(default=0.15, gt=0, le=1)
+    MEMORY_REINFORCE_STEP: float = Field(default=0.1, ge=0, le=1)
+    # Only memories this relevant to the question are reinforced when recalled
+    # (calibrated for nomic-embed-text: relevant >= 0.536, unrelated <= 0.504).
+    MEMORY_REINFORCE_MIN_RELEVANCE: float = Field(default=0.52, ge=0, le=1)
+    # Supersession: existing memories at least this similar to a new one are checked by
+    # the memory LLM for contradiction (contradictions measured 0.53-0.66).
+    MEMORY_SUPERSEDE_ENABLED: bool = True
+    MEMORY_SUPERSEDE_MIN_SCORE: float = Field(default=0.52, ge=0, le=1)
     # agent = LangGraph agent with tools (default); plain = Phase 3-4 chat, for debugging.
     CHAT_MODE: Literal["agent", "plain"] = "agent"
 

@@ -1,7 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel
 
 from app.deps import CurrentUser, DbSession
 from app.schemas.users import MeOut, MeUpdate
+from app.services.privacy_service import CONFIRM_PHRASE, delete_all_user_data
 
 router = APIRouter(tags=["users"])
 
@@ -19,3 +21,25 @@ def update_me(body: MeUpdate, user: CurrentUser, db: DbSession) -> MeOut:
     db.commit()
     db.refresh(user)
     return MeOut.model_validate(user)
+
+
+class DeleteAllRequest(BaseModel):
+    # Must be exactly "DELETE MY DATA": protects against accidental calls.
+    confirm: str
+
+
+@router.delete("/me/data")
+def delete_my_data(
+    body: DeleteAllRequest, request: Request, user: CurrentUser, db: DbSession
+) -> dict:
+    """Permanently delete everything PersonaOS stores about you: memories (and their
+    history), documents and their chunks, goals, tasks, chats, Google tokens and your
+    user record. Returns what was deleted.
+
+    Your Firebase login itself is not deleted here: do that from the app (Firebase
+    client SDK `user.delete()`). Signing in again starts a new, empty account."""
+    if body.confirm != CONFIRM_PHRASE:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, f'confirm must be exactly "{CONFIRM_PHRASE}"'
+        )
+    return {"deleted": delete_all_user_data(db, request.app.state.services, user)}

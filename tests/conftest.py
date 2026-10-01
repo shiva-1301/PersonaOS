@@ -36,6 +36,9 @@ OFFLINE = {
     "MEMORY_LLM_PROVIDER": "fake",
     "EMBEDDING_PROVIDER": "fake",
     "LLM_RATE_LIMIT_ATTEMPTS": 1,
+    # The hashing test embedder gives much lower similarity scores than nomic.
+    "MEMORY_REINFORCE_MIN_RELEVANCE": 0.0,
+    "MEMORY_SUPERSEDE_MIN_SCORE": 0.0,
 }
 
 # Settings that must never leak in from the developer's shell (Settings reads os.environ
@@ -135,6 +138,11 @@ def alembic_config(url: str) -> Config:
 def db_url() -> str:
     url = ensure_database("personaos_test")
     command.upgrade(alembic_config(url), "head")
+    # Start empty even if a previous run was killed before its per-test cleanup.
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE {', '.join(t.name for t in Base.metadata.sorted_tables)}"))
+    engine.dispose()
     return url
 
 

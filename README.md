@@ -4,7 +4,7 @@
 
 PersonaOS is a personal AI life-management assistant. It has long-term memory with a forgetting curve, search over your own documents (RAG), goal and task tracking with study-plan generation, and an agent that can act on your behalf. It's built with FastAPI, PostgreSQL, ChromaDB, Mem0, LangGraph and Streamlit.
 
-> Status: **Phase 6 (agent with tools, streaming chat)**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
+> Status: **Phase 7 (memory lifecycle and privacy)**. What is stored and how to delete it: [docs/PRIVACY.md](docs/PRIVACY.md). See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for progress and [docs/DECISIONS.md](docs/DECISIONS.md) for design decisions.
 
 ## Quick start (Windows / PowerShell)
 
@@ -49,6 +49,8 @@ Tests need Postgres running (`docker compose up -d postgres`). They use a separa
 .venv\Scripts\python.exe scripts\verify_planner_docker.py
 # The agent with real tools: goals, tasks, notes, plans, prompt injection, isolation, streaming
 .venv\Scripts\python.exe scripts\verify_agent_docker.py
+# Memory decay, supersession, deleting one memory, and "delete all my data" (every store)
+.venv\Scripts\python.exe scripts\verify_lifecycle_docker.py
 ```
 
 Memory extraction runs in the background after each reply. `POST /chat` returns `memory_status: "pending"`; `GET /chat/sessions/{id}` shows `done` (or `failed`) on that message once the memory is available (a few seconds when models are warm).
@@ -89,6 +91,21 @@ Invoke-RestMethod -Method Post http://localhost:8000/chat -Headers $h -ContentTy
 
 # Streaming (Server-Sent Events): token / reset / tool / done / error events
 curl.exe -N -H "Authorization: Bearer $t" -H "Content-Type: application/json" -d '{\"message\":\"What do my notes say about entropy?\"}' http://localhost:8000/chat/stream
+```
+
+### Memory and privacy
+
+Memories fade when unused (active → stale → archived), get stronger when used, and are marked superseded when you state something that replaces them. See [docs/PRIVACY.md](docs/PRIVACY.md).
+
+```powershell
+Invoke-RestMethod http://localhost:8000/memory -Headers $h            # all memories with state
+Invoke-RestMethod http://localhost:8000/memory/health -Headers $h     # counts by state, last 7 days
+Invoke-RestMethod -Method Delete "http://localhost:8000/memory/<id>" -Headers $h
+# Delete EVERYTHING stored about you (irreversible):
+Invoke-RestMethod -Method Delete http://localhost:8000/me/data -Headers $h -ContentType application/json -Body '{"confirm":"DELETE MY DATA"}'
+
+# Nightly lifecycle job (needs CRON_SECRET in .env; schedule it with Task Scheduler or cloud cron)
+curl.exe -X POST -H "X-Cron-Secret: <your CRON_SECRET>" http://localhost:8000/internal/jobs/memory-lifecycle
 ```
 
 If PowerShell blocks the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
