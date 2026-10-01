@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     STREAMLIT_BROWSER_SERVER_ADDRESS=localhost \
     STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_SERVER_FILE_WATCHER_TYPE=none \
-    STREAMLIT_SERVER_MAX_UPLOAD_SIZE=25
+    STREAMLIT_SERVER_MAX_UPLOAD_SIZE=10
 
 WORKDIR /app
 
@@ -20,6 +20,9 @@ RUN pip install -r /tmp/requirements.txt
 
 COPY --chown=app:app . /app/frontend
 
+# Run from frontend/ so Streamlit reads frontend/.streamlit/config.toml (the theme).
+WORKDIR /app/frontend
+
 USER app
 
 EXPOSE 8501
@@ -27,4 +30,4 @@ EXPOSE 8501
 HEALTHCHECK --interval=15s --timeout=3s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=2).status == 200 else 1)"
 
-CMD ["streamlit", "run", "frontend/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]

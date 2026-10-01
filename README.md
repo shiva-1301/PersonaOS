@@ -47,12 +47,14 @@ Open http://localhost:8501 after `.\scripts\up.ps1`. Create an account or sign i
 - **Memory:** what is remembered. Forget one memory, or delete everything (optionally your login too).
 - **Integrations:** connect Google Calendar, confirm proposed events, see the next 7 days.
 
-At first sign-in your timezone is taken from the browser; change it in the sidebar.
+At first sign-in your timezone is taken from the browser; change it in the account menu (top right).
 
-Run the UI outside Docker (the API still on port 8000):
+Run the UI outside Docker (the API still on port 8000; it runs from `frontend/` so the theme applies):
 ```powershell
-.venv\Scripts\streamlit.exe run frontend\streamlit_app.py
+.\scripts\ui.ps1
 ```
+
+The look ("Aura": warm paper, a soft aura, serif headlines, pill buttons) comes from `frontend/.streamlit/config.toml` and `frontend/style.py`. Fonts are self-hosted in `frontend/static/fonts`.
 
 The dashboard's data is also available from the API:
 ```powershell

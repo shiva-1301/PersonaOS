@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from frontend import charts, session
+from frontend import charts, session, style
 
 
 def _dark() -> bool:
@@ -11,8 +11,14 @@ def _dark() -> bool:
 
 def render() -> None:
     api = session.client()
-    st.title("Dashboard")
     data = api.analytics()
+    style.hero(
+        "Last 30 days",
+        "Your progress, *at a glance*.",
+        f"Days and weeks are in your timezone ({data['timezone']}).",
+        left=True,
+        live=True,
+    )
     dark = _dark()
 
     streak, week, overdue, soon = st.columns(4)
@@ -75,4 +81,3 @@ def render() -> None:
                 )
         else:
             st.info("No memories yet. Tell PersonaOS about yourself in Chat.")
-    st.caption(f"Days and weeks are in your timezone ({data['timezone']}).")

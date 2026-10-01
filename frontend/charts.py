@@ -26,8 +26,8 @@ class Theme:
 
 
 LIGHT = Theme(
-    ink="#0b0b0b",
-    ink_secondary="#52514e",
+    ink="#1c1b22",  # the UI's ink (frontend/style.py)
+    ink_secondary="#55525f",
     muted="#898781",
     grid="#e1e0d9",
     baseline="#c3c2b7",
@@ -45,7 +45,7 @@ DARK = Theme(
     series=("#3987e5", "#d95926", "#199e70", "#c98500"),
     track="#104281",
 )
-FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
+FONT = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif'
 MEMORY_STATES = ("active", "stale", "archived", "superseded")
 
 
@@ -129,8 +129,13 @@ def goals_figure(goals: list[dict], *, dark: bool = False) -> go.Figure:
             ),
         ]
     )
-    _layout(fig, t, height=max(140, 56 * len(goals) + 40))
-    fig.update_layout(barmode="overlay", bargap=0.45, margin={"l": 8, "r": 110, "t": 8, "b": 8})
+    _layout(fig, t, height=max(120, 46 * len(goals) + 40))
+    fig.update_layout(
+        barmode="overlay",
+        bargap=0.62,
+        barcornerradius="50%",
+        margin={"l": 8, "r": 110, "t": 8, "b": 8},
+    )
     fig.update_xaxes(range=[0, 100], showticklabels=False, showline=False)
     fig.update_yaxes(autorange="reversed", showgrid=False, tickfont={"color": t.ink})
     return fig

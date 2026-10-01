@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from frontend import session
+from frontend import session, style
 from frontend.api_client import ApiClient
 
 STATUS = {"processing": "⏳ Processing", "ready": "✅ Ready", "failed": "⚠️ Failed"}
@@ -25,7 +25,7 @@ def _upload(api: ApiClient) -> None:
 
 
 def _document(api: ApiClient, doc: dict) -> None:
-    with st.container(border=True):
+    with st.container(key=f"card-doc-{doc['id']}"):
         top, actions = st.columns([3, 2], vertical_alignment="center")
         top.markdown(f"**{doc['filename']}**")
         detail = STATUS.get(doc["status"], doc["status"])
@@ -76,8 +76,8 @@ def _search(api: ApiClient) -> None:
         return
     if not hits:
         st.info("Nothing in your documents matches that.")
-    for hit in hits:
-        with st.container(border=True):
+    for i, hit in enumerate(hits):
+        with st.container(key=f"card-hit-{i}"):
             part = hit["chunk_index"] + 1
             st.caption(f"{hit['filename']} · part {part} · relevance {hit['relevance']:.2f}")
             st.markdown(hit["text"][:800] + ("…" if len(hit["text"]) > 800 else ""))
@@ -85,7 +85,12 @@ def _search(api: ApiClient) -> None:
 
 def render() -> None:
     api = session.client()
-    st.title("Documents")
+    style.hero(
+        "Your notes",
+        "Documents, *searchable*.",
+        "Upload PDF, Word or text files; then ask about them in Chat.",
+        left=True,
+    )
     _upload(api)
     processing = any(d["status"] == "processing" for d in api.documents())
     st.session_state["docs_processing"] = processing

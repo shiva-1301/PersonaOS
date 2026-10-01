@@ -1,0 +1,73 @@
+# PersonaOS UI ("Aura"): warm paper, a soft blue/lavender aura, serif headlines with
+# an italic accent, ink pill buttons, a coral accent. Run the UI from frontend/ (scripts\ui.ps1
+# or the Docker image) so Streamlit picks this file up. Extra styling: frontend/style.py.
+
+[server]
+headless = true
+# Same as the API's MAX_UPLOAD_MB, so the upload box shows the real limit.
+maxUploadSize = 10
+# Serves frontend/static/ (self-hosted fonts) at app/static/.
+enableStaticServing = true
+
+[client]
+# No developer toolbar items ("Deploy" etc.) for users.
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+# Setting the address also stops Streamlit looking up your public IP at startup.
+serverAddress = "localhost"
+
+[theme]
+base = "light"
+primaryColor = "#1c1b22"
+backgroundColor = "#f6f3ee"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#1c1b22"
+linkColor = "#4559d6"
+linkUnderline = false
+borderColor = "#e4dfd6"
+showWidgetBorder = true
+baseRadius = "14px"
+buttonRadius = "full"
+baseFontSize = 15
+font = "Inter, system-ui, sans-serif"
+headingFont = "Instrument Serif, Georgia, serif"
+headingFontWeights = 400
+headingFontSizes = ["3.25rem", "2.1rem", "1.45rem", "1.2rem", "1rem", "0.9rem"]
+codeFont = "JetBrains Mono, monospace"
+metricValueFontSize = "2.4rem"
+metricValueFontWeight = 400
+blueColor = "#4559d6"
+orangeColor = "#ff5b35"
+violetColor = "#7b61ff"
+# The dashboard's charts set their own colours (frontend/charts.py); these match them.
+chartCategoricalColors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "app/static/fonts/Inter-Variable.woff2"
+weight = "400 700"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Instrument Serif"
+url = "app/static/fonts/InstrumentSerif-Regular.woff2"
+weight = "400"
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Instrument Serif"
+url = "app/static/fonts/InstrumentSerif-Italic.woff2"
+weight = "400"
+style = "italic"
+
+[[theme.fontFaces]]
+family = "JetBrains Mono"
+url = "app/static/fonts/JetBrainsMono-Variable.woff2"
+weight = "400 600"
+style = "normal"
+
+[theme.sidebar]
+backgroundColor = "#fbfaf7"
+secondaryBackgroundColor = "#ffffff"

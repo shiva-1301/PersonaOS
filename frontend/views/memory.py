@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from frontend import session
+from frontend import session, style
 from frontend.api_client import ApiClient
 from frontend.firebase_auth import AuthError
 
@@ -88,7 +88,12 @@ def _delete_everything(api: ApiClient) -> None:
 
 def render() -> None:
     api = session.client()
-    st.title("Memory")
+    style.hero(
+        "Memory",
+        "What I *remember*.",
+        "Facts fade when unused and newer ones replace older ones. Forget anything here.",
+        left=True,
+    )
     _memories(api)
     st.divider()
     _delete_everything(api)

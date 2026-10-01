@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from frontend import session
+from frontend import session, style
 from frontend.api_client import ApiClient, ApiError
 
 
@@ -37,7 +37,7 @@ def _connected(api: ApiClient) -> None:
     if proposals:
         st.subheader("Waiting for your confirmation")
         for p in proposals:
-            with st.container(border=True):
+            with st.container(key=f"card-proposal-{p['id']}"):
                 st.markdown(
                     f"**{p['title']}** · {session.local_time(p['start_at'], tz)} to "
                     f"{session.local_time(p['end_at'], tz, '%H:%M')}"
@@ -79,7 +79,12 @@ def _connected(api: ApiClient) -> None:
 
 def render() -> None:
     api = session.client()
-    st.title("Integrations")
+    style.hero(
+        "Integrations",
+        "Your *calendar*, connected.",
+        "PersonaOS reads your next events and adds only the ones you confirm.",
+        left=True,
+    )
     st.subheader("Google Calendar")
     status = api.google_status()
     if not status["configured"]:

@@ -528,3 +528,29 @@ You asked for a plan for your English exam on 12 Oct at 5 h/week. What went wron
   - goal and plan created on the "yes" in 8 of 8 runs (two batches of 5 and 3), up from 1 of 3 before the fix;
   - 0 wrong weekday/date pairs in replies;
   - each "yes" answered with the template listing the saved sessions.
+
+### Phase 9: UI design ("Aura", 2026-10-01, from your reference designs)
+- **Direction.** Of the four references, the OpenBook "Ai that gets you" design fits a personal AI best, and is the base:
+  - warm paper background with a soft blue/lavender/pink aura and a faint grid behind the headline;
+  - serif headlines with an italic accent word;
+  - ink pill buttons, a pill navigation bar at the top, small monospace tag labels;
+  - floating pills on the sign-in page.
+- **From PeakPro:** a coral accent used sparingly (the send button, the "live" tag dot, a floating pill), outline stat pills, and white cards.
+- **Left out:** the dark neon (Themehunk) and loud gradient (Freepik) styles, which would hurt readability in a working app.
+- **How it's built:**
+  - `frontend/.streamlit/config.toml` theme: light base, colours, Inter / Instrument Serif / JetBrains Mono, 14 px radius, pill buttons, chart colours.
+  - `frontend/style.py` adds only what the theme can't: the aura, heroes, tags, chat bubbles, cards and metric tiles.
+  - It targets only Streamlit's stable hooks: `data-testid` attributes and the `st-key-*` classes from `st.container(key=…)`.
+  - Pages are in a top pill nav (`st.navigation(position="top")`) with the logo; the account menu (email, timezone, sign out) is a pill at the top right.
+  - Each page has a serif hero, and the empty Chat page has one-click suggestion chips.
+- **Fonts are self-hosted** (`frontend/static/fonts`, SIL Open Font License files included), served with Streamlit static serving. Google Fonts would make every visitor's browser contact Google.
+- **Small UI changes alongside:**
+  - Streamlit's developer toolbar is hidden (`toolbarMode = "minimal"`).
+  - The UI upload limit is 10 MB, the API's limit, so the upload box shows the real limit.
+  - Goal progress is a slim blue meter matching the dashboard's.
+- **Running it:** the UI must run from `frontend/` for the theme file to apply. Docker does (`WORKDIR /app/frontend`); locally, use `.\scripts\ui.ps1`.
+- **Verified by rendering every page** (headless Edge, demo data via a temporary fake-auth API on the test database), then fixing what the screenshots showed:
+  - floating pills overlapping the headline;
+  - the account pill out of place;
+  - chat bubbles overflowing;
+  - the 0% progress bar not showing.

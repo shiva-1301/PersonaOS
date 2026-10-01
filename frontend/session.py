@@ -6,6 +6,7 @@ failure or any 401 signs the user out with a message on the login page.
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import streamlit as st
@@ -19,6 +20,8 @@ from frontend.firebase_auth import AuthError, FirebaseAuth, FirebaseSession
 API_HTTP = None
 API_TRANSPORT = None
 FIREBASE_TRANSPORT = None
+
+STATIC = Path(__file__).resolve().parent / "static"
 
 AUTH = "auth"
 NOTICE = "notice"

@@ -82,7 +82,12 @@ def texts(at: AppTest) -> str:
     parts = []
     for kind in ("title", "markdown", "caption", "info", "success", "warning", "error"):
         parts += [str(e.value) for e in getattr(at, kind)]
-    return "\n".join(parts)
+    return "\n".join(parts + hero_html(at))
+
+
+def hero_html(at: AppTest) -> list[str]:
+    """The page headings are st.html blocks (frontend/style.py), not st.title."""
+    return [e.proto.body for e in at.get("html") if "pos-hero" in e.proto.body]
 
 
 def click(at: AppTest, label: str) -> AppTest:
@@ -96,7 +101,7 @@ def click(at: AppTest, label: str) -> AppTest:
 def test_signed_out_shows_the_login_page(ui):
     at = app(token=None)
     assert not at.exception
-    assert at.title[0].value == "PersonaOS"
+    assert "One identity. One <em>memory</em>." in hero_html(at)[0]
     assert [t.label for t in at.tabs] == ["Sign in", "Create account", "Forgot password"]
 
 
@@ -107,10 +112,8 @@ def test_sign_in_opens_the_chat_page(ui):
     at = click(at, "Sign in")
     assert not at.exception
     assert session.AUTH in at.session_state
-    assert "Chat" in [t.value for t in at.title]
-    assert "a@example.com" in texts(at) or any(
-        "a@example.com" in c.value for c in at.sidebar.caption
-    )
+    assert "Ask me <em>anything</em>." in hero_html(at)[0]  # the Chat page
+    assert "Signed in as **a@example.com**" in [c.value for c in at.caption]
 
 
 def test_wrong_password_shows_a_friendly_error(ui):
@@ -126,7 +129,7 @@ def test_an_expired_session_goes_back_to_login_with_a_message(ui):
     at = app(token="expired-token")  # the API answers 401
     assert not at.exception
     assert session.AUTH not in at.session_state
-    assert at.title[0].value == "PersonaOS"
+    assert "One identity" in hero_html(at)[0]  # back on the sign-in page
     assert [w.value for w in at.warning] == [session.SESSION_EXPIRED]
 
 
@@ -252,3 +255,28 @@ def test_chat_caption_for_a_tool_that_worked(ui, db_app):
     at.chat_input[0].set_value("add a goal: English exam on 12 Jan").run()
     assert "I created a goal." in " ".join(c.value for c in at.caption)
     assert [g["title"] for g in ui.get("/goals", headers=A).json()] == ["English exam"]
+
+
+def test_a_suggestion_chip_sends_its_prompt(ui, db_app):
+    script(db_app, "You have no tasks this week.")
+    at = app()
+    at = click(at, "What are my tasks this week?")
+    assert not at.exception
+    assert "You have no tasks this week." in texts(at)
+    sessions = ui.get("/chat/sessions", headers=A).json()
+    detail = ui.get(f"/chat/sessions/{sessions[0]['id']}", headers=A).json()
+    assert detail["messages"][0]["content"] == "What are my tasks this week?"
+
+
+def test_every_page_has_its_serif_heading(ui):
+    expected = {
+        "documents": "Documents, <em>searchable</em>.",
+        "goals": "Plans that <em>happen</em>.",
+        "dashboard": "Your progress, <em>at a glance</em>.",
+        "memory": "What I <em>remember</em>.",
+        "integrations": "Your <em>calendar</em>, connected.",
+    }
+    for name, heading in expected.items():
+        at = view(name)
+        assert not at.exception, name
+        assert heading in hero_html(at)[0], name

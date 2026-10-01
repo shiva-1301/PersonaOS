@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 
 import streamlit as st
 
-from frontend import session
+from frontend import session, style
 from frontend.api_client import ApiClient
 
 FILTERS = {"All open": None, "Today": "today", "This week": "this_week", "Overdue": "overdue"}
@@ -66,7 +66,7 @@ def _plan_form(api: ApiClient, goal: dict) -> None:
 
 def _goal(api: ApiClient, goal: dict, tz) -> None:
     p = goal["progress"]
-    with st.container(border=True):
+    with st.container(key=f"card-goal-{goal['id']}"):
         head, status = st.columns([4, 1], vertical_alignment="center")
         head.markdown(f"**{goal['title']}**")
         target = (
@@ -88,7 +88,7 @@ def _goal(api: ApiClient, goal: dict, tz) -> None:
             api.update_goal, goal["id"], status=new_status
         ):
             st.rerun()
-        st.progress(p["ratio"], text=f"{round(100 * p['ratio'])}% done")
+        style.meter(p["ratio"], f"{round(100 * p['ratio'])}% done")
         with st.expander("Plan and tasks"):
             _plan_form(api, goal)
             for task in api.tasks(goal_id=goal["id"]):
@@ -153,7 +153,12 @@ def _new_task(api: ApiClient, goals: list[dict]) -> None:
 def render() -> None:
     api = session.client()
     tz = session.user_zone(api)
-    st.title("Goals & Tasks")
+    style.hero(
+        "Goals & tasks",
+        "Plans that *happen*.",
+        "Set a goal, let PersonaOS plan the study sessions, then tick them off.",
+        left=True,
+    )
     goals_tab, tasks_tab = st.tabs(["Goals", "Tasks"])
 
     goals = api.goals()
